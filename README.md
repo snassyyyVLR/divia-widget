@@ -57,7 +57,7 @@ baseline matches the operator's plan *for that date* — the realtime feed.
 
 ## Install
 
-1. Grab `DiviaWidget-debug.apk` from the [releases](../../releases) page
+1. Grab `DiviaWidget-(version number)-release.apk` from the [releases](../../releases) page
    (or build it — see below) and install it (allow "install unknown apps"
    once).
 2. Long-press an empty area of your home screen → Widgets → Divia Widget.
