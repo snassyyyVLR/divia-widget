@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Day -->
+    <color name="widget_bg">#FFFFFF</color>
+    <color name="txt_main">#1B1D22</color>
+    <color name="txt_sub">#5C6470</color>
+    <color name="txt_clock">#8A929C</color>
+    <color name="divider">#ECEEF2</color>
+    <color name="countdown">#E2001A</color>
+    <color name="late">#B45309</color>
+    <color name="badge_bg">#E2001A</color>
+    <color name="badge_text">#FFFFFF</color>
+    <color name="screen_bg">#F4F5F7</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="btn_stroke">#E3E6EB</color>
+</resources>

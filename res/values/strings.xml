@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Divia Widget</string>
+    <string name="widget_label">Divia — prochains passages</string>
+    <string name="widget_desc">Prochains passages bus et tram Divia (Dijon) pour une ligne ou un arrêt favori, mis à jour en temps réel.</string>
+
+    <!-- Widget -->
+    <string name="loading">Chargement…</string>
+    <string name="setup_title">Divia</string>
+    <string name="setup_hint">Touchez pour choisir votre ligne et votre arrêt</string>
+    <string name="setup_hint2">Touchez le widget pour le configurer</string>
+    <string name="no_departures">Aucun passage à venir</string>
+    <string name="offline">Hors ligne</string>
+    <string name="updated_fmt">Mis à jour à %s</string>
+    <string name="offline_since_fmt">Hors ligne · %s</string>
+    <string name="approaching">à l\'approche</string>
+    <string name="min_fmt">%d min</string>
+    <string name="hour_fmt">%1$dh%2$02d</string>
+    <string name="late_min_fmt">+%d′</string>
+    <string name="late_hour_fmt">+%1$dh%2$02d</string>
+    <string name="all_lines">Toutes les lignes</string>
+
+    <!-- Configuration -->
+    <string name="config_title">Configurer le widget</string>
+    <string name="mode_line">Ligne</string>
+    <string name="mode_stop">Arrêt</string>
+    <string name="search_hint">Rechercher…</string>
+    <string name="step_lines">Choisissez une ligne</string>
+    <string name="step_directions_fmt">Sens de la ligne %s</string>
+    <string name="step_stops_fmt">Arrêts — %s</string>
+    <string name="step_all_stops">Tous les arrêts</string>
+    <string name="back">Retour</string>
+    <string name="direction_fmt">→ %s</string>
+    <string name="stop_count_fmt">%d arrêts</string>
+    <string name="lines_fmt">Lignes : %s</string>
+
+    <!-- Launcher home -->
+    <string name="home_title">Vos widgets Divia</string>
+    <string name="home_hint">Pour ajouter un widget : appui long sur le fond d\'écran d\'accueil → Widgets → Divia Widget.\n\nLe widget apparaît alors : touchez-le pour choisir votre ligne et votre arrêt. Touchez-le ensuite pour le rafraîchir instantanément (actualisation automatique toutes les 5 minutes).</string>
+    <string name="not_configured_title_fmt">Widget n°%1$d</string>
+    <string name="not_configured">Pas encore configuré — touchez pour configurer</string>
+
+    <!-- Diagnostics -->
+    <string name="diag_title">Diagnostic</string>
+    <string name="diag_version_fmt">Version : %1$s (%2$d)</string>
+    <string name="diag_launcher_fmt">Launcher : %1$s</string>
+    <string name="diag_bound_fmt">Widgets liés : %1$s</string>
+    <string name="diag_bound2_fmt">Widgets liés : %1$d — %2$d configuré(s), %3$d non configuré(s) (%4$s)</string>
+    <string name="diag_bound_none">aucun — si un widget est affiché mais pas listé ici, le launcher ne l\'a pas lié : redémarrez le téléphone, puis réajoutez le widget</string>
+    <string name="diag_last_ok_fmt">Dernière mise à jour réussie : %1$s</string>
+    <string name="diag_last_err_fmt">Dernière erreur : %1$s — %2$s</string>
+    <string name="diag_repaint_done">Repeinture envoyée à tous les widgets liés.</string>
+    <string name="diag_catalog_fmt">Catalogue : OK — %1$d lignes, %2$d arrêts</string>
+    <string name="diag_testing">Test du flux de données…</string>
+    <string name="diag_feed_ok_fmt">Flux : OK — %1$d octets en %2$d ms (%3$d courses)</string>
+    <string name="diag_deps_fmt">%1$d prochains passages trouvés pour votre arrêt</string>
+    <string name="diag_feed_fail_fmt">Flux : échec — %1$s</string>
+    <string name="diag_refresh_started">Actualisation lancée…</string>
+    <string name="refresh_now">Actualiser les widgets</string>
+    <string name="repaint_now">Repeindre les widgets maintenant</string>
+    <string name="test_feed">Tester le flux de données</string>
+    <string name="edit">Modifier</string>
+
+    <!-- Widget management / launcher repair -->
+    <string name="manage_title_fmt">Widget : %1$s</string>
+    <string name="manage_edit">Modifier la ligne / l\'arrêt</string>
+    <string name="manage_reset">Réinitialiser (retour à la configuration)</string>
+    <string name="manage_forget">Oublier ce widget (efface sa configuration)</string>
+    <string name="cancel">Annuler</string>
+    <string name="widget_id_fmt"> · n°%1$d</string>
+    <string name="repair_title">Réparer un widget cassé</string>
+    <string name="repair_launcher_btn">Réparer / repeindre les widgets</string>
+    <string name="repair_launcher_unknown">launcher inconnu</string>
+    <string name="repair_body">Une case « Can\'t load widget » a deux causes possibles :\n\n1. Le widget est lié à l\'application mais son visuel est cassé. Le bouton ci-dessous renvoie immédiatement un visuel neuf à chaque widget lié — cela répare ce cas, sans réseau.\n\n2. La case est une cellule morte restée dans la mémoire du launcher (%1$s) — elle n\'est liée à rien : aucune application ne peut la réparer. Supprimez-la à la main (appui long sur la case → Supprimer), puis ajoutez à nouveau le widget.\n\nEn cas de doute : redémarrez le téléphone, remettez le widget, touchez-le pour le configurer. La liste de l\'application ne montre que les widgets réellement configurés ; les « liaisons fantômes » restantes sont comptées dans le panneau Diagnostic et disparaîtront d\'elles-mêmes après un redémarrage du launcher.</string>
+    <string name="repair_open">Ouvrir la fiche du launcher</string>
+    <string name="repair_line">« Can\'t load widget » : d\'abord « Réparer / repeindre », sinon la case est morte côté launcher → supprimez-la à la main.</string>
+
+    <!-- Settings screen (v2.1) -->
+    <string name="settings_title">Réglages</string>
+    <string name="section_diagnostics">Diagnostic</string>
+    <string name="section_actions">Actions</string>
+    <string name="section_about">À propos</string>
+    <string name="setting_version">Version</string>
+    <string name="setting_launcher">Launcher</string>
+    <string name="setting_widgets">Widgets liés</string>
+    <string name="setting_widget_ids">IDs</string>
+    <string name="setting_last_refresh">Dernière MAJ</string>
+    <string name="setting_last_error">Dernière erreur</string>
+    <string name="setting_catalog">Catalogue</string>
+    <string name="setting_source">Source de données</string>
+    <string name="setting_catalog_valid">Catalogue valable</string>
+    <string name="setting_source_value">Données ouvertes Divia Mobilités (transport.data.gouv.fr)</string>
+    <string name="catalog_valid_value">3 janvier 2027</string>
+    <string name="value_none">—</string>
+    <string name="catalog_ok_fmt">OK · %1$d lignes · %2$d arrêts</string>
+    <string name="bound_fmt">%1$d liés · %2$d configuré(s) · %3$d à configurer</string>
+    <string name="home_empty_title">Aucun widget pour l\'instant</string>
+    <string name="home_empty_body">Appui long sur un espace vide de l\'écran d\'accueil → Widgets → Divia Widget.\n\nLe widget apparaît alors : touchez-le pour choisir votre ligne et votre arrêt. Touchez-le ensuite pour le rafraîchir instantanément (actualisation automatique toutes les 5 minutes).</string>
+    <string name="status_refreshing">Actualisation…</string>
+    <string name="feed_test_title">Flux de données</string>
+    <string name="about_late_note">Les horaires affichés sont des prévisions en temps réel : un éventuel retard y est déjà inclus. Un marqueur « +4′ » (compteur en orange) signale un véhicule en retard d\'au moins 2 minutes sur l\'horaire théorique ; les courses annulées ne sont pas affichées.</string>
+    <string name="about_author">Auteur</string>
+    <string name="about_author_value">Snassyyy</string>
+    <string name="about_license">Licence du code</string>
+    <string name="about_license_value">MIT (open source)</string>
+</resources>

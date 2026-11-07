@@ -1,0 +1,216 @@
+/*
+ * Divia Widget — live bus & tram departures for Dijon (Android home-screen
+ * widget, no dependencies, no accounts).
+ * Copyright (c) 2026 Snassyyy — MIT License (see LICENSE).
+ */
+package com.zai.divia.core;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
+
+/**
+ * In-memory catalog of the Divia network, parsed from the gzipped line-based
+ * asset produced at build time from the official GTFS.
+ * Pure Java: the caller supplies the InputStream (asset on Android, file on JVM).
+ *
+ * Format (one record per line, fields separated by '|'):
+ *   L|route_id|short_name|long_name|route_type|color_hex
+ *   S|stop_id|stop_name
+ *   T|trip_id|route_id|direction|headsign
+ *   D|route_id|direction|stop_id,stop_id,...
+ *   B|route_id|direction|direction_label
+ *   A|stop_id|line_short,line_short,...
+ */
+public final class Catalog {
+
+    public static final class Route {
+        public final String id;
+        public final String shortName;
+        public final String longName;
+        public final int type;          // 0 = tram, 3 = bus
+        public final String colorHex;   // without '#'
+        Route(String id, String sh, String ln, int t, String c) {
+            this.id = id; this.shortName = sh; this.longName = ln; this.type = t; this.colorHex = c;
+        }
+    }
+
+    public static final class Trip {
+        public final String routeId;
+        public final int direction;
+        public final String headsign;
+        Trip(String r, int d, String h) { routeId = r; direction = d; headsign = h; }
+    }
+
+    public final HashMap<String, Route> routes = new HashMap<String, Route>(80);
+    public final HashMap<String, String> stopNames = new HashMap<String, String>(1300);
+    public final HashMap<String, Trip> trips = new HashMap<String, Trip>(31000);
+    public final HashMap<String, String[]> lineStops = new HashMap<String, String[]>(160);   // "routeId|dir" -> ordered stop ids
+    public final HashMap<String, String> dirLabels = new HashMap<String, String>(160);       // "routeId|dir" -> label
+    public final HashMap<String, String[]> stopLines = new HashMap<String, String[]>(1300);  // stopId -> line short names
+
+    /** stop NAME -> every id of that physical stop (several quays share a name). */
+    private HashMap<String, ArrayList<String>> idsByName;
+
+    private List<Route> sortedRoutes;
+
+    public Catalog(InputStream gzipped) throws IOException {
+        InputStream in = new GZIPInputStream(gzipped, 64 * 1024);
+        BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8), 64 * 1024);
+        String line;
+        while ((line = r.readLine()) != null) {
+            if (line.length() < 3 || line.charAt(1) != '|') continue;
+            char kind = line.charAt(0);
+            switch (kind) {
+                case 'L': {
+                    String[] p = split(line, 6);
+                    routes.put(p[1], new Route(p[1], p[2], p[3], Integer.parseInt(p[4]), p[5]));
+                    break;
+                }
+                case 'S': {
+                    String[] p = split(line, 3);
+                    stopNames.put(p[1], p[2]);
+                    break;
+                }
+                case 'T': {
+                    String[] p = split(line, 5);
+                    trips.put(p[1], new Trip(p[2], Integer.parseInt(p[3]), p[4]));
+                    break;
+                }
+                case 'D': {
+                    String[] p = split(line, 4);
+                    lineStops.put(p[1] + "|" + p[2], p[3].split(","));
+                    break;
+                }
+                case 'B': {
+                    String[] p = split(line, 4);
+                    dirLabels.put(p[1] + "|" + p[2], p[3]);
+                    break;
+                }
+                case 'A': {
+                    String[] p = split(line, 3);
+                    stopLines.put(p[1], p[2].split(","));
+                    break;
+                }
+                default: // ignore
+            }
+        }
+        r.close();
+    }
+
+    private static String[] split(String line, int limit) {
+        ArrayList<String> parts = new ArrayList<String>(limit);
+        int start = 0;
+        for (int i = 0; i < line.length() && parts.size() < limit - 1; i++) {
+            if (line.charAt(i) == '|') {
+                parts.add(line.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(line.substring(start));
+        return parts.toArray(new String[parts.size()]);
+    }
+
+    /** Routes ordered for display: trams first, then Lignes (L*), then numeric buses. */
+    public List<Route> sortedRoutes() {
+        if (sortedRoutes == null) {
+            ArrayList<Route> list = new ArrayList<Route>(routes.values());
+            Collections.sort(list, new Comparator<Route>() {
+                public int compare(Route a, Route b) {
+                    long ka = sortKey(a), kb = sortKey(b);
+                    if (ka != kb) return ka < kb ? -1 : 1;
+                    return a.shortName.compareTo(b.shortName);
+                }
+            });
+            sortedRoutes = list;
+        }
+        return sortedRoutes;
+    }
+
+    private static long sortKey(Route r) {
+        if (r.type == 0) return 0;                                  // trams T1, T2
+        char c0 = r.shortName.isEmpty() ? ' ' : Character.toUpperCase(r.shortName.charAt(0));
+        if (c0 == 'L') return 1;                                    // Liannes L1..L9
+        if (c0 == 'P' || c0 == 'B') return 3;                      // specialty lines
+        try { Integer.parseInt(r.shortName); return 2; }           // numeric buses
+        catch (NumberFormatException e) { return 3; }
+    }
+
+    public String stopName(String stopId) {
+        String n = stopNames.get(stopId);
+        return n == null ? stopId : n;
+    }
+
+    public String dirLabel(String routeId, int direction) {
+        String l = dirLabels.get(routeId + "|" + direction);
+        return l == null ? "" : l;
+    }
+
+    public String[] lineStopIds(String routeId, int direction) {
+        return lineStops.get(routeId + "|" + direction);
+    }
+
+    /**
+     * Every id of the physical stop the given id belongs to (the GTFS splits
+     * one stop into several quay ids that share the same name). Always
+     * contains at least the given id itself.
+     */
+    public String[] siblingIds(String stopId) {
+        if (idsByName == null) {
+            idsByName = new HashMap<String, ArrayList<String>>(stopNames.size());
+            for (Map.Entry<String, String> e : stopNames.entrySet()) {
+                ArrayList<String> l = idsByName.get(e.getValue());
+                if (l == null) {
+                    l = new ArrayList<String>(2);
+                    idsByName.put(e.getValue(), l);
+                }
+                l.add(e.getKey());
+            }
+        }
+        String name = stopNames.get(stopId);
+        ArrayList<String> l = name != null ? idsByName.get(name) : null;
+        if (l == null || l.isEmpty()) return new String[]{stopId};
+        // stable order: keep the catalog order, but the requested id first
+        ArrayList<String> out = new ArrayList<String>(l.size());
+        out.add(stopId);
+        for (String s : l) if (!s.equals(stopId)) out.add(s);
+        return out.toArray(new String[out.size()]);
+    }
+
+    /** Lines serving a stop, "T1, T2" style, or "". */
+    public String stopLinesLabel(String stopId) {
+        String[] ls = stopLines.get(stopId);
+        if (ls == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String s : ls) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+
+    /** Lines serving ANY quay of the physical stop, de-duplicated, or "". */
+    public String stopLinesLabelAny(String stopId) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<String>();
+        for (String id : siblingIds(stopId)) {
+            String[] ls = stopLines.get(id);
+            if (ls != null) for (String s : ls) set.add(s);
+        }
+        if (set.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String s : set) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+}

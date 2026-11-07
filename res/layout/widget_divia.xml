@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Divia widget RemoteViews layout, v2.0 clean rewrite.
+
+  HARD CONSTRAINT — @RemoteView whitelist: the launcher inflates this file
+  in ITS OWN process through RemoteViews.apply(), whose LayoutInflater
+  filter only allows classes annotated @RemoteView:
+    FrameLayout, LinearLayout, RelativeLayout, GridLayout,
+    AnalogClock, Button, Chronometer, ImageButton, ImageView,
+    ProgressBar, TextView, ViewFlipper, ListView, GridView,
+    StackView, AdapterViewFlipper, ViewStub.
+  A plain <View> (used as the divider in v1.x) is NOT on that list ->
+  "Class not allowed to be instantiated: android.view.View" ->
+  "Problem loading widget" on EVERY launcher (platform-enforced).
+  The 1dp divider below is therefore a TextView. run_harness.sh now
+  fails the build if a non-whitelisted class ever comes back.
+
+  All view ids are identical to v1.x so widgets bound under previous
+  versions keep resolving after an in-place update.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:paddingLeft="10dp"
+    android:paddingRight="10dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="6dp">
+
+    <!-- Header: line badge + stop name -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/line_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="40dp"
+            android:background="@drawable/badge_bg"
+            android:textColor="@color/badge_text"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:maxLines="1"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:text="…"/>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="4dp">
+
+            <TextView
+                android:id="@+id/stop_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/txt_main"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Divia"/>
+
+            <TextView
+                android:id="@+id/line_dest"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/txt_sub"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="…"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 1dp divider: TextView, NOT <View> (see header comment) -->
+    <TextView
+        android:id="@+id/divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp"/>
+
+    <!-- Departure rows -->
+    <LinearLayout
+        android:id="@+id/row0"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/dest0"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_main"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/count0"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/countdown"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:layout_marginLeft="6dp"/>
+
+        <TextView
+            android:id="@+id/clock0"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_clock"
+            android:textSize="12sp"
+            android:layout_marginLeft="8dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/row1"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/dest1"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_main"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/count1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/countdown"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:layout_marginLeft="6dp"/>
+
+        <TextView
+            android:id="@+id/clock1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_clock"
+            android:textSize="12sp"
+            android:layout_marginLeft="8dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/row2"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/dest2"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_main"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/count2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/countdown"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:layout_marginLeft="6dp"/>
+
+        <TextView
+            android:id="@+id/clock2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/txt_clock"
+            android:textSize="12sp"
+            android:layout_marginLeft="8dp"/>
+    </LinearLayout>
+
+    <!-- Empty / error status -->
+    <TextView
+        android:id="@+id/empty_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textColor="@color/txt_sub"
+        android:textSize="11sp"
+        android:paddingTop="6dp"
+        android:paddingBottom="2dp"/>
+
+    <!-- Footer -->
+    <TextView
+        android:id="@+id/updated"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/txt_clock"
+        android:textSize="10sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:layout_marginTop="2dp"/>
+</LinearLayout>

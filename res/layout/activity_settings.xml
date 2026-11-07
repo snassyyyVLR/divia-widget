@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings: diagnostics data, actions (refresh / test / repair) and about. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/screen_bg">
+
+    <!-- Header with back -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingLeft="8dp"
+        android:paddingRight="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp">
+
+        <ImageView
+            android:id="@+id/btn_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:scaleType="centerInside"
+            android:padding="8dp"
+            android:background="@drawable/btn_icon"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="4dp"
+            android:textColor="@color/txt_main"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:text="@string/settings_title"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingBottom="16dp">
+
+            <!-- Diagnostics section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/countdown"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textAllCaps="true"
+                android:letterSpacing="0.12"
+                android:paddingLeft="14dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="6dp"
+                android:text="@string/section_diagnostics"/>
+
+            <LinearLayout
+                android:id="@+id/diag_rows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:background="@drawable/card"/>
+
+            <!-- Actions section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/countdown"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textAllCaps="true"
+                android:letterSpacing="0.12"
+                android:paddingLeft="14dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="6dp"
+                android:text="@string/section_actions"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:background="@drawable/card">
+
+                <Button
+                    android:id="@+id/btn_refresh_now"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:background="@drawable/btn_primary"
+                    android:textColor="@color/badge_text"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textAllCaps="false"
+                    android:text="@string/refresh_now"/>
+
+                <Button
+                    android:id="@+id/btn_test_feed"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:textColor="@color/txt_main"
+                    android:textSize="14sp"
+                    android:textAllCaps="false"
+                    android:text="@string/test_feed"/>
+
+                <Button
+                    android:id="@+id/btn_repair_launcher"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:textColor="@color/txt_main"
+                    android:textSize="14sp"
+                    android:textAllCaps="false"
+                    android:text="@string/repair_launcher_btn"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/txt_clock"
+                android:textSize="11sp"
+                android:lineSpacingExtra="3dp"
+                android:paddingLeft="14dp"
+                android:paddingTop="6dp"
+                android:text="@string/repair_line"/>
+
+            <!-- About section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/countdown"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textAllCaps="true"
+                android:letterSpacing="0.12"
+                android:paddingLeft="14dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="6dp"
+                android:text="@string/section_about"/>
+
+            <LinearLayout
+                android:id="@+id/about_rows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:background="@drawable/card"/>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

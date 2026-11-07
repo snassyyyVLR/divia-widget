@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark variant of AppTheme so the app screens (which use the
+         @color/txt_* / @color/card_bg day-night pairs) also get properly
+         dark-styled framework controls (RadioButton, EditText, dialogs). -->
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#E2001A</item>
+        <item name="android:colorAccent">#FF5A68</item>
+        <item name="android:statusBarColor">#121317</item>
+        <item name="android:windowBackground">@color/screen_bg</item>
+    </style>
+</resources>

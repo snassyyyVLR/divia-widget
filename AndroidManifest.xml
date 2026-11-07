@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.zai.divia"
+    android:versionCode="8"
+    android:versionName="2.1.1">
+
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Needed to display the current launcher's package in diagnostics. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.HOME"/>
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme"
+        android:allowBackup="true">
+
+        <!-- App home: clean widget manager (v2.1 launcher entry). -->
+        <activity android:name=".HomeActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Configuration / line-direction-stop picker. NOTE: the widget
+             provider deliberately does NOT reference this as
+             android:configure — MIUI/HyperOS launchers break that flow for
+             sideloaded apps and unbind the widget. Tapping a new widget
+             opens this screen instead. -->
+        <activity android:name=".ConfigActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+
+        <!-- Settings: diagnostics data + maintenance actions. -->
+        <activity android:name=".SettingsActivity" android:exported="false"
+            android:parentActivityName=".HomeActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+
+        <!-- The home screen widget: standard, minimal intent-filter only. -->
+        <receiver android:name=".DiviaWidgetProvider" android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info"/>
+        </receiver>
+
+        <!-- Refresh broadcasts: the 5-minute alarm and tap-to-refresh.
+             Explicit broadcasts only, so exported=false is fine. -->
+        <receiver android:name=".RefreshReceiver" android:exported="false"/>
+
+        <!-- Re-schedules the periodic refresh after a reboot and repaints
+             all widgets after an app update. -->
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
