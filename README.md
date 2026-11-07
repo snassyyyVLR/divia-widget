@@ -136,3 +136,4 @@ against the real catalog and live feed.
 - This project is not affiliated with Divia, Keolis Dijon or
   transport.data.gouv.fr. The app contacts exactly one host:
   `proxy.transport.data.gouv.fr`.
+- Made with the use of AI tools for the development.
