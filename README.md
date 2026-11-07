@@ -9,8 +9,7 @@ by **Snassyyy**
 A zero-dependency, zero-account Android home-screen widget showing the next
 3 departures for any Divia line or stop — powered by the official French
 open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics,
-no special permissions beyond the network: the whole app is ~35 KB of
-hand-written Java and one hand-rolled GTFS-RT protobuf parser.
+no special permissions beyond the network: the whole app is ~35 KB of Java and one hand-rolled GTFS-RT protobuf parser.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
