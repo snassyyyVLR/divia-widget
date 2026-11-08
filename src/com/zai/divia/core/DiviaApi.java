@@ -101,7 +101,7 @@ public final class DiviaApi {
             else headsign = cat.dirLabel(e.routeId, Math.max(e.direction, 0));
 
             result.add(new Departure(e.routeId, lineShort, headsign, e.direction,
-                    e.timeSec, e.delaySec));
+                    e.timeSec, e.delaySec, e.tripId));
             if (result.size() >= 60) break;   // plenty
         }
 

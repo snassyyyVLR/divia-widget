@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zai.divia"
-    android:versionCode="8"
-    android:versionName="2.1.1">
+    android:versionCode="10"
+    android:versionName="1.1.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- v1.1.0: departure alerts + info-trafic alerts (runtime-granted on 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Needed to display the current launcher's package in diagnostics. -->
     <queries>
@@ -46,6 +48,13 @@
             android:parentActivityName=".HomeActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"/>
 
+        <!-- v1.1.0: "time to leave" sheet, opened by tapping a departure row
+             on the widget. Dialog-themed, never in recents. -->
+        <activity android:name=".NotifyActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.Alert"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+
         <!-- The home screen widget: standard, minimal intent-filter only. -->
         <receiver android:name=".DiviaWidgetProvider" android:exported="true"
             android:label="@string/widget_label">
@@ -68,5 +77,9 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
             </intent-filter>
         </receiver>
+
+        <!-- v1.1.0: fires the "time to leave" alert of a widget, after
+             re-checking the trip against the live feed. -->
+        <receiver android:name=".NotifyReceiver" android:exported="false"/>
     </application>
 </manifest>

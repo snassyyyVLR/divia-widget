@@ -51,6 +51,7 @@ public class SettingsActivity extends Activity {
     private Button refreshNowBtn;
     private Button testFeedBtn;
     private Button repairBtn;
+    private TextView trafficValue;
 
     private final Handler handler = new Handler();
 
@@ -64,6 +65,14 @@ public class SettingsActivity extends Activity {
         refreshNowBtn = (Button) findViewById(R.id.btn_refresh_now);
         testFeedBtn = (Button) findViewById(R.id.btn_test_feed);
         repairBtn = (Button) findViewById(R.id.btn_repair_launcher);
+        trafficValue = (TextView) findViewById(R.id.traffic_value);
+
+        findViewById(R.id.traffic_row).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                toggleTrafficAlerts();
+            }
+        });
+        updateTrafficValue();
 
         findViewById(R.id.btn_back).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -112,6 +121,35 @@ public class SettingsActivity extends Activity {
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         super.onDestroy();
+    }
+
+    // --------------------------------------------------------- notifications
+
+    /** v1.1.0: info-trafic notification toggle (asks for the Android 13
+     *  notification permission exactly when the user switches it on). */
+    private void toggleTrafficAlerts() {
+        boolean on = !WidgetPrefs.getTrafficAlerts(this);
+        WidgetPrefs.setTrafficAlerts(this, on);
+        if (on) {
+            WidgetPrefs.setTrafficLastCheck(this, 0L);   // poll again soon
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                try {
+                    if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        WidgetPrefs.setNotifAsked(this, true);
+                        requestPermissions(
+                                new String[]{"android.permission.POST_NOTIFICATIONS"}, 8);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        updateTrafficValue();
+    }
+
+    private void updateTrafficValue() {
+        trafficValue.setText(WidgetPrefs.getTrafficAlerts(this)
+                ? R.string.traffic_on : R.string.traffic_off);
     }
 
     // ------------------------------------------------------------------ rows

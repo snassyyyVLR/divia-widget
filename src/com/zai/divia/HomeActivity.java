@@ -108,6 +108,7 @@ public class HomeActivity extends Activity {
         // removed), then heal every widget and arm the periodic alarm.
         cleanupOrphans();
         RefreshLogic.kick(this);
+        maybeAskNotifPermission();
 
         // Load the catalog off the main thread.
         new Thread(new Runnable() {
@@ -162,9 +163,16 @@ public class HomeActivity extends Activity {
                 Catalog.Route route = catalog.routes.get(cfg.routeId);
                 r.badge = cfg.lineMode && route != null ? route.shortName : "•";
                 r.title = catalog.stopName(cfg.stopId);
-                String sub = cfg.lineMode
-                        ? getString(R.string.direction_fmt, catalog.dirLabel(cfg.routeId, cfg.dir))
-                        : getString(R.string.all_lines);
+                String sub;
+                if (cfg.lineMode) {
+                    sub = getString(R.string.direction_fmt, catalog.dirLabel(cfg.routeId, cfg.dir));
+                    boolean commute = cfg.stopId2 != null && !cfg.stopId2.isEmpty();
+                    if (commute) {
+                        sub = sub + " / " + catalog.stopName(cfg.stopId2);
+                    }
+                } else {
+                    sub = getString(R.string.all_lines);
+                }
                 r.subtitle = sub + getString(R.string.widget_id_fmt, id);
                 rows.add(r);
             }
@@ -198,41 +206,119 @@ public class HomeActivity extends Activity {
         startActivity(i);
     }
 
-    /** Long-press menu on a card: edit, or forget it. */
+    /** Long-press menu on a card: edit, rows, return direction, or forget. */
     private void manageWidget(final Row r) {
         final int wid = r.widgetId;
         String label = r.title + (r.subtitle == null || r.subtitle.isEmpty()
                 ? "" : " — " + r.subtitle);
+        final WidgetPrefs.Config cfg = WidgetPrefs.load(this, wid);
+        final boolean commute = cfg != null && cfg.lineMode
+                && cfg.stopId2 != null && !cfg.stopId2.isEmpty();
+
+        final ArrayList<String> labels = new ArrayList<String>();
+        final ArrayList<Integer> actions = new ArrayList<Integer>();
+        labels.add(getString(R.string.manage_edit));            actions.add(A_EDIT);
+        if (cfg != null && cfg.lineMode) {
+            labels.add(getString(commute ? R.string.commute_edit : R.string.commute_add));
+            actions.add(A_RETURN);
+            if (commute) {
+                labels.add(getString(R.string.commute_remove));
+                actions.add(A_RETURN_OFF);
+            }
+        }
+        if (cfg != null) {
+            labels.add(getString(R.string.manage_rows));       actions.add(A_ROWS);
+        }
+        labels.add(getString(R.string.manage_forget));         actions.add(A_FORGET);
+        labels.add(getString(R.string.cancel));                 actions.add(A_CANCEL);
+
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.manage_title_fmt, label))
-                .setItems(new String[]{
-                        getString(R.string.manage_edit),
-                        getString(R.string.manage_forget),
-                        getString(R.string.cancel)
-                }, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        if (which == 0) {
-                            editWidget(wid);
-                        } else if (which == 1) {
-                            // Forget = clear the stored config. A visible
-                            // widget returns to its "tap to set up"
-                            // placeholder; a phantom entry (ghost binding
-                            // with leftover prefs) simply disappears.
-                            WidgetPrefs.delete(HomeActivity.this, wid);
-                            synchronized (RefreshLogic.CACHE) {
-                                RefreshLogic.CACHE.remove(wid);
+                .setItems(labels.toArray(new String[labels.size()]),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int which) {
+                                int action = actions.get(which);
+                                if (action == A_EDIT) {
+                                    editWidget(wid);
+                                } else if (action == A_RETURN) {
+                                    pickReturnStop(wid);
+                                } else if (action == A_RETURN_OFF) {
+                                    cfg.stopId2 = "";
+                                    WidgetPrefs.save(HomeActivity.this, wid, cfg);
+                                    RefreshLogic.kick(HomeActivity.this);
+                                    rebuild();
+                                } else if (action == A_ROWS) {
+                                    chooseRows(wid, cfg);
+                                } else if (action == A_FORGET) {
+                                    forgetWidget(wid);
+                                }
                             }
-                            try {
-                                RefreshLogic.renderPlaceholder(HomeActivity.this,
-                                        AppWidgetManager.getInstance(HomeActivity.this), wid);
-                            } catch (Throwable ignored) {
-                            }
-                            rebuild();
-                            updateStatus();
-                        }
-                    }
-                })
+                        })
                 .show();
+    }
+
+    private static final int A_EDIT = 0, A_RETURN = 1, A_RETURN_OFF = 2,
+            A_ROWS = 3, A_FORGET = 4, A_CANCEL = 5;
+
+    /** Opens the return-direction stop picker for an existing line widget. */
+    private void pickReturnStop(int widgetId) {
+        Intent i = new Intent(this, ConfigActivity.class);
+        i.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
+        i.putExtra(ConfigActivity.EXTRA_PICK_RETURN, true);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(i);
+    }
+
+    /** Row-count chooser: auto (from widget size) or a fixed 2/3/5. */
+    private void chooseRows(final int wid, final WidgetPrefs.Config cfg) {
+        final int[] values = {0, 2, 3, 5};
+        String[] labels = {
+                getString(R.string.rows_auto),
+                getString(R.string.rows_two),
+                getString(R.string.rows_three),
+                getString(R.string.rows_five),
+        };
+        int checked = 3;
+        for (int i = 0; i < values.length; i++) if (values[i] == cfg.rows) checked = i;
+        final int[] sel = {checked};
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.manage_rows)
+                .setSingleChoiceItems(labels, checked,
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int which) {
+                                sel[0] = which;
+                            }
+                        })
+                .setPositiveButton(android.R.string.ok,
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int w) {
+                                cfg.rows = values[sel[0]];
+                                WidgetPrefs.save(HomeActivity.this, wid, cfg);
+                                RefreshLogic.kick(HomeActivity.this);
+                            }
+                        })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /** Forget = clear the stored config; visible widgets reset to setup. */
+    private void forgetWidget(final int wid) {
+        // Forget = clear the stored config. A visible
+        // widget returns to its "tap to set up"
+        // placeholder; a phantom entry (ghost binding
+        // with leftover prefs) simply disappears.
+        NotifyScheduler.cancel(this, wid);
+        WidgetPrefs.delete(this, wid);
+        synchronized (RefreshLogic.CACHE) {
+            RefreshLogic.CACHE.remove(wid);
+        }
+        try {
+            RefreshLogic.renderPlaceholder(this,
+                    AppWidgetManager.getInstance(this), wid);
+        } catch (Throwable ignored) {
+        }
+        rebuild();
+        updateStatus();
     }
 
     /** Deletes stored configs of widget ids that are no longer bound. */
@@ -256,6 +342,23 @@ public class HomeActivity extends Activity {
                 }
             }
             if (ed != null) ed.apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Android 13+: ask once, in context, for the notification permission
+     *  (departure alerts + info trafic) when the feature is enabled. */
+    private void maybeAskNotifPermission() {
+        try {
+            if (!WidgetPrefs.getTrafficAlerts(this)) return;
+            if (WidgetPrefs.getNotifAsked(this)) return;
+            if (android.os.Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                WidgetPrefs.setNotifAsked(this, true);
+                requestPermissions(
+                        new String[]{"android.permission.POST_NOTIFICATIONS"}, 7);
+            }
         } catch (Throwable ignored) {
         }
     }

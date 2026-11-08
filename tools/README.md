@@ -7,8 +7,18 @@ stdlib, no dependencies.
 
 The app ships `assets/catalog.gz`, a compact line-based digest of the
 official static GTFS (lines, stops, trips, line patterns, direction
-labels). It expires when the operator publishes a new fare/schedule
-edition; the app's About screen shows the current validity date.
+labels, adapted-day flags). It expires when the operator publishes a new
+fare/schedule edition; the app's About screen shows the current validity
+date.
+
+The `X|yyyymmdd|route_id,…` records encode **adapted-timetable days**:
+this GTFS defines every service date explicitly (a Saturday can run a
+special plan for a demonstration, a Wednesday the Sunday plan for
+Armistice…). The generator compares each date's per-route trip count with
+the modal count of that weekday — flagging only rare outliers, so the
+normal school-term/holiday alternation is not mistaken for a disruption.
+The app shows an "horaires adaptés" chip in the widget footer on those
+days.
 
 ```bash
 # 1. download the current GTFS zip from transport.data.gouv.fr

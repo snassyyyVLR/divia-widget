@@ -9,6 +9,7 @@ package android.content;
  */
 public class Context {
     public static final String ALARM_SERVICE = "alarm";
+    public static final String NOTIFICATION_SERVICE = "notification";
     public static final int MODE_PRIVATE = 0;
 
     public String packageName = "com.zai.divia";
@@ -21,11 +22,16 @@ public class Context {
     private final java.util.HashMap<String, SharedPreferences> prefsMap =
             new java.util.HashMap<String, SharedPreferences>();
     public final android.app.AlarmManager alarmManager = new android.app.AlarmManager();
+    /** Posted notifications (shared per-Context, like on device). */
+    public final android.app.NotificationManager notificationManager =
+            new android.app.NotificationManager();
 
     public String getPackageName() { return packageName; }
 
     public Object getSystemService(String name) {
-        return ALARM_SERVICE.equals(name) ? alarmManager : null;
+        if (ALARM_SERVICE.equals(name)) return alarmManager;
+        if (NOTIFICATION_SERVICE.equals(name)) return notificationManager;
+        return null;
     }
 
     public android.content.res.AssetManager getAssets() {

@@ -7,22 +7,44 @@ by **Snassyyy**
 ![widget preview](docs/widget-preview.png)
 
 A zero-dependency, zero-account Android home-screen widget showing the next
-3 departures for any Divia line or stop — powered by the official French
+departures for any Divia line or stop — powered by the official French
 open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics,
-no special permissions beyond the network: the whole app is ~35 KB of Java and one hand-rolled GTFS-RT protobuf parser.
+no special permissions beyond the network: the whole app is a few dozen KB
+of hand-written Java and one hand-rolled GTFS-RT protobuf parser.
+
+Current release: **release-1.1.0** — version numbering now follows the
+public GitHub release line (the previous public drop was v2.1.1; the
+internal 2.x labels are retired). `versionCode` stays monotonic (10), so
+the APK installs over every earlier build.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
+- **Two directions on one widget (1.1.0)** — commute mode shows both legs
+  (e.g. Suquet → Université *and* AgroSup → Talant) split across the rows.
 - **Live predictions** — times come from the GTFS-RT trip-update feed, so a
   delay is already baked into what you see.
 - **Explicit lateness marker** — an amber countdown plus a compact `+4′`
   (or `+2h05`) tag when a vehicle runs ≥ 2 min behind the published
   timetable. Cancelled trips are filtered out.
+- **"Horaires adaptés" chip (1.1.0)** — on strike/demo/holiday days, when the
+  network runs a special plan, the footer says so (that's the day Google
+  Maps showed the wrong "scheduled" times).
+- **Resizable, 2/3/5 rows (1.1.0)** — the row count follows the widget size;
+  long-press a widget card in the app to override it.
+- **Line-colored badge (1.1.0)** — the header pill is painted in the line's
+  official GTFS color (L5 pink, T1/T2 tram purple, Liannes blue…).
+- **"Time to leave" alerts (1.1.0)** — tap a departure row on the widget,
+  pick a 3/5/10-min lead time, get a notification that re-checks the live
+  feed before firing (a slipping bus yields an updated countdown).
+- **Info-trafic notifications (1.1.0)** — official disruption posts from
+  information.divia.fr (strikes, demos, replaced trams), never promo.
+- **Battery-aware refresh (1.1.0)** — 5-minute cadence by day, 30 minutes
+  during the night service gap, self-rescheduling alarms.
 - **5-minute auto-refresh + tap-to-refresh**, self-healing widgets, offline
   fallback with "last good data" rows.
 - **Clean companion app** — home screen listing your widgets, and a Settings
   screen with diagnostics (bound widget ids, launcher, last refresh, last
-  error), feed test and repair actions.
+  error), feed test, traffic-alerts toggle and repair actions.
 - **FR/EN, day/night themes.** Android 5.0+ (API 21), target 34.
 
 ## Reading the widget
@@ -33,8 +55,12 @@ Each row is: destination · countdown · clock time.
   time already includes the delay.
 - **Amber countdown + `+4′`** = running ≥ 2 min late vs the timetable
   (`+2h05` format past an hour). On-time or early vehicles show no marker.
+- **Tap a row** → set a "time to leave" alert for that departure; **tap
+  elsewhere** → instant refresh.
 - Footer `Mis à jour à HH:MM` = last successful live refresh; `Hors ligne`
-  = showing cached rows (data-freshness signal, not a lateness one).
+  = showing cached rows (data-freshness signal, not a lateness one);
+  `Horaires adaptés` = the network runs a special plan today (strike, demo,
+  holiday) — trust the realtime times, not the printed fiche horaire.
 
 ## Lateness, and why apps sometimes disagree
 
@@ -57,7 +83,7 @@ baseline matches the operator's plan *for that date* — the realtime feed.
 
 ## Install
 
-1. Grab `DiviaWidget-(version number)-release.apk` from the [releases](../../releases) page
+1. Grab `DiviaWidget-debug.apk` from the [releases](../../releases) page
    (or build it — see below) and install it (allow "install unknown apps"
    once).
 2. Long-press an empty area of your home screen → Widgets → Divia Widget.
@@ -101,14 +127,14 @@ will then need to uninstall the older build first).
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 2.1.1, API 21-34)
+AndroidManifest.xml     app manifest (version 1.1.0, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
-run-tests.sh            JVM test harness runner
+run-tests.sh            JVM test harness runner (800+ assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
 debug.keystore          shared debug signing key
 src/com/zai/divia/      app code (widget provider, refresh engine, activities)
-src/com/zai/divia/core/ pure-Java core: catalog, GTFS-RT parser, API
+src/com/zai/divia/core/ pure-Java core: catalog, GTFS-RT parser, RSS reader
 res/                    layouts, strings (FR/EN), day/night themes, icon
 assets/catalog.gz       compact digest of the static GTFS (bundled data)
 test/                   JVM harness + android stubs
@@ -118,8 +144,10 @@ docs/                   preview image
 
 The core (`core/`) is pure Java with no Android imports, so the whole
 parsing/rendering pipeline runs on a desktop JVM — that is what
-`run-tests.sh` exercises, including the layout whitelist and a full render
-against the real catalog and live feed.
+`run-tests.sh` exercises (826 assertions): layout whitelist, full
+render pipeline against the real catalog and live feed, badge colors,
+row counts, commute split, adapted-day chip, RSS parsing, notification
+building and alert scheduling.
 
 ## Data & credits
 
@@ -133,6 +161,6 @@ against the real catalog and live feed.
 - The bundled catalog covers the network until **2027-01-03**; after that
   date, regenerate it and rebuild.
 - This project is not affiliated with Divia, Keolis Dijon or
-  transport.data.gouv.fr. The app contacts exactly one host:
-  `proxy.transport.data.gouv.fr`.
-- Made with the use of AI tools for the development.
+  transport.data.gouv.fr. The app contacts exactly two hosts:
+  `proxy.transport.data.gouv.fr` (live departures) and
+  `information.divia.fr` (disruption announcements).

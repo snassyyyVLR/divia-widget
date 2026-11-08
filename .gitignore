@@ -1,0 +1,16 @@
+# build output
+out/
+*.apk
+*.idsig
+*.class
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+local.properties
+
+# local data caches (tools/)
+gtfs/
+*.pb

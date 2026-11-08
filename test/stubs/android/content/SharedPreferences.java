@@ -14,6 +14,9 @@ public class SharedPreferences {
     public long getLong(String k, long def) {
         Object v = map.get(k); return v instanceof Long ? ((Long) v).longValue() : def;
     }
+    public boolean getBoolean(String k, boolean def) {
+        Object v = map.get(k); return v instanceof Boolean ? ((Boolean) v).booleanValue() : def;
+    }
     public java.util.Map<String, Object> getAll() { return map; }
 
     public Editor edit() { return new Editor(); }
@@ -24,6 +27,7 @@ public class SharedPreferences {
         public Editor putString(String k, String v) { pend.put(k, v); return this; }
         public Editor putInt(String k, int v) { pend.put(k, Integer.valueOf(v)); return this; }
         public Editor putLong(String k, long v) { pend.put(k, Long.valueOf(v)); return this; }
+        public Editor putBoolean(String k, boolean v) { pend.put(k, Boolean.valueOf(v)); return this; }
         public Editor remove(String k) { removals.add(k); return this; }
         public void apply() {
             map.putAll(pend);

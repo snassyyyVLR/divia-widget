@@ -3,6 +3,10 @@ package android.appwidget;
 public class AppWidgetManager {
     public static final int INVALID_APPWIDGET_ID = 0;
     public static final String EXTRA_APPWIDGET_ID = "appWidgetId";
+    public static final String OPTION_APPWIDGET_MIN_HEIGHT = "appWidgetMinHeight";
+    public static final String OPTION_APPWIDGET_MAX_HEIGHT = "appWidgetMaxHeight";
+    public static final String OPTION_APPWIDGET_MIN_WIDTH = "appWidgetMinWidth";
+    public static final String OPTION_APPWIDGET_MAX_WIDTH = "appWidgetMaxWidth";
 
     private static final AppWidgetManager INSTANCE = new AppWidgetManager();
 

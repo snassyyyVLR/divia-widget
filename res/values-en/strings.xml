@@ -103,4 +103,43 @@
     <string name="about_author_value">Snassyyy</string>
     <string name="about_license">Code license</string>
     <string name="about_license_value">MIT (open source)</string>
+
+    <!-- v1.1.0: adapted-timetable days -->
+    <string name="adapted_tag">adapted timetable</string>
+    <string name="adapted_footer_fmt">Adapted timetable · %s</string>
+
+    <!-- v1.1.0: commute mode -->
+    <string name="commute_ask">Add the return direction?</string>
+    <string name="commute_body">The widget will then show both directions of the line (e.g. Suquet → Université and AgroSup → Talant), split across the available rows.</string>
+    <string name="commute_yes">Yes</string>
+    <string name="commute_no">No</string>
+    <string name="commute_add">Add return direction</string>
+    <string name="commute_edit">Change return direction</string>
+    <string name="commute_remove">Remove return direction</string>
+
+    <!-- v1.1.0: row count -->
+    <string name="manage_rows">Rows shown</string>
+    <string name="rows_auto">Auto (from widget size)</string>
+    <string name="rows_two">2 rows</string>
+    <string name="rows_three">3 rows</string>
+    <string name="rows_five">5 rows</string>
+
+    <!-- v1.1.0: departure + traffic alerts -->
+    <string name="notify_title">Remind me before departure</string>
+    <string name="notify_lead_label">How many minutes before?</string>
+    <string name="notify_lead_fmt">%d min before</string>
+    <string name="notify_cancel">Cancel alert</string>
+    <string name="notify_cancel_toast">Alert cancelled</string>
+    <string name="notify_close">Close</string>
+    <string name="notify_set_toast_fmt">Alert %d min before departure</string>
+    <string name="notify_perm_hint">Notifications are off: allow them in Android settings to receive the alert.</string>
+    <string name="notif_chan_departures">Departure alerts</string>
+    <string name="notif_chan_trafic">Traffic info</string>
+    <string name="notif_depart_fmt">%1$s in %2$d min</string>
+    <string name="notif_gone_title_fmt">%1$s: departure passed or cancelled</string>
+    <string name="notif_traffic_title">Divia traffic info</string>
+    <string name="setting_traffic">Traffic alerts</string>
+    <string name="traffic_on">On</string>
+    <string name="traffic_off">Off</string>
+    <string name="traffic_note">Notifications when the network is disrupted (strikes, demonstrations, replaced trams…) — official DiviaMobilités announcements only, never promo posts. Checked roughly every 30 minutes.</string>
 </resources>

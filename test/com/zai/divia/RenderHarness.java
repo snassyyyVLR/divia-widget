@@ -10,6 +10,7 @@ import com.zai.divia.core.Catalog;
 import com.zai.divia.core.Departure;
 import com.zai.divia.core.DiviaApi;
 import com.zai.divia.core.ProtoRt;
+import com.zai.divia.core.TrafficFeed;
 
 import java.io.FileInputStream;
 import java.lang.reflect.Field;
@@ -39,7 +40,8 @@ import java.util.zip.GZIPInputStream;
  */
 public final class RenderHarness {
 
-    static final String PROJ = "/home/z/my-project/scripts/diviaproj";
+    /** Project root: injected by run-tests.sh (-Ddivia.proj=...). */
+    static final String PROJ = System.getProperty("divia.proj", ".");
     static int pass = 0, fail = 0;
 
     static void check(boolean ok, String msg) {
@@ -114,8 +116,10 @@ public final class RenderHarness {
             if (v != null) validIds.add(v);
         }
         for (String needed : new String[]{"widget_root", "line_badge", "stop_name", "line_dest",
-                "row0", "row1", "row2", "dest0", "dest1", "dest2",
-                "count0", "count1", "count2", "clock0", "clock1", "clock2",
+                "row0", "row1", "row2", "row3", "row4",
+                "dest0", "dest1", "dest2", "dest3", "dest4",
+                "count0", "count1", "count2", "count3", "count4",
+                "clock0", "clock1", "clock2", "clock3", "clock4",
                 "empty_status", "updated"}) {
             check(layoutIdNames.contains(needed), "widget_divia.xml contains @+id/" + needed);
         }
@@ -405,6 +409,248 @@ public final class RenderHarness {
         check("+2h05".equals(RefreshLogic.lateMarker(ctx, 7500)), "lateMarker(7500 s) = +2h05");
         check("+5\u2032".equals(RefreshLogic.lateMarker(ctx, 300)), "lateMarker(300 s) = +5'");
 
+        // ---------------------------------------------------------------- v1.1.0: badge colors
+        System.out.println("[badge colors]");
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 8, cfgT2, cat, depsT2, now * 1000L, false);
+        if (awm.updates.size() == 1) {
+            RemoteViews rv = (RemoteViews) awm.updates.get(0)[1];
+            android.graphics.Bitmap badge = bitmapByView(rv).get(R.id.line_badge);
+            Catalog.Route t2Route = cat.routes.get(t2Id);
+            check(badge != null && t2Route != null, "badge: T2 bitmap + route present");
+            if (badge != null && t2Route != null && !badge.bgColors.isEmpty()) {
+                int wantBg = (int) (0xFF000000L | Long.parseLong(t2Route.colorHex, 16));
+                check(badge.bgColors.get(0).intValue() == wantBg,
+                        "badge: T2 pill painted in the line color #" + t2Route.colorHex);
+            }
+        }
+        // Contrast heuristic sanity (white text on dark, dark on light).
+        check(BadgeRender.luminance(0xFFFFFFFF) > 0.6f, "badge: luminance(white) > 0.6");
+        check(BadgeRender.luminance(0xFF123456) < 0.6f, "badge: luminance(dark) < 0.6");
+        check(BadgeRender.make(ctx, "L5", "EA619F") != null, "badge: L5 pink pill renders");
+
+        // ---------------------------------------------------------------- v1.1.0: row count 2/3/5
+        System.out.println("[row count]");
+        check(RefreshLogic.effRows(newCfg(0, 0)) == 3, "rows: default (unknown height) = 3");
+        check(RefreshLogic.effRows(newCfg(0, 80)) == 2, "rows: small widget = 2");
+        check(RefreshLogic.effRows(newCfg(0, 110)) == 3, "rows: 4x2 widget = 3");
+        check(RefreshLogic.effRows(newCfg(0, 200)) == 5, "rows: tall widget = 5");
+        check(RefreshLogic.effRows(newCfg(2, 0)) == 2, "rows: manual override 2");
+        check(RefreshLogic.effRows(newCfg(5, 80)) == 5, "rows: manual override beats height");
+
+        // 5-row render against the 6-departure synthetic list.
+        WidgetPrefs.Config cfg5 = newCfg(5, 200);
+        cfg5.lineMode = true;
+        cfg5.routeId = "4-T1";
+        cfg5.dir = 1;
+        cfg5.stopId = "4-1462";
+        cfg5.lastOk = now;
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 32, cfg5, cat, synDeps, now * 1000L, false);
+        assertRender(awm, 32, validIds, idByName, Math.min(5, synDeps.size()),
+                "5-row mode", "T1", "Darcy", cfg5);
+
+        // 2-row render (small widget).
+        WidgetPrefs.Config cfg2r = newCfg(2, 80);
+        cfg2r.lineMode = true;
+        cfg2r.routeId = "4-T1";
+        cfg2r.dir = 1;
+        cfg2r.stopId = "4-1462";
+        cfg2r.lastOk = now;
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 33, cfg2r, cat, synDeps, now * 1000L, false);
+        assertRender(awm, 33, validIds, idByName, 2, "2-row mode", "T1", "Darcy", cfg2r);
+
+        // ---------------------------------------------------------------- v1.1.0: commute mode
+        System.out.println("[commute mode]");
+        byte[] comFeed = feed(
+                trip("com-a1", "4-T1", 1, stu("4-1462", now + 300, Integer.valueOf(0), true)),
+                trip("com-a2", "4-T1", 1, stu("4-1462", now + 700, Integer.valueOf(0), true)),
+                trip("com-b1", "4-T1", 0, stu("4-1605", now + 400, Integer.valueOf(0), true)),
+                trip("com-b2", "4-T1", 0, stu("4-1605", now + 900, Integer.valueOf(0), true)));
+        List<Departure> comA = DiviaApi.nextDepartures(comFeed, cat, "4-1462", "4-T1", 1, 5, now);
+        List<Departure> comB = DiviaApi.nextDepartures(comFeed, cat, "4-1605", "4-T1", 0, 5, now);
+        List<Departure> comMerged = new ArrayList<Departure>(comA);
+        comMerged.addAll(comB);
+        check(comA.size() == 2 && comB.size() == 2, "commute: 2+2 departures parsed");
+        WidgetPrefs.Config cfgCom = newCfg(5, 200);
+        cfgCom.lineMode = true;
+        cfgCom.routeId = "4-T1";
+        cfgCom.dir = 1;
+        cfgCom.stopId = "4-1462";
+        cfgCom.dir2 = 0;
+        cfgCom.stopId2 = "4-1605";
+        cfgCom.lastOk = now;
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 34, cfgCom, cat, comMerged, now * 1000L, false);
+        check(awm.updates.size() == 1, "commute: one update pushed");
+        if (awm.updates.size() == 1) {
+            RemoteViews rv = (RemoteViews) awm.updates.get(0)[1];
+            Map<Integer, Object> texts = textsByView(rv);
+            Map<Integer, Integer> vis = visByView(rv);
+            // rows=5 -> 3 A rows + 2 B rows: row0/1 = A, row2 GONE, row3/4 = B.
+            check(vis.get(R.id.row0) != null && vis.get(R.id.row0) == android.view.View.VISIBLE
+                    && vis.get(R.id.row1) != null && vis.get(R.id.row1) == android.view.View.VISIBLE,
+                    "commute: A rows visible");
+            check(vis.get(R.id.row2) != null && vis.get(R.id.row2) == android.view.View.GONE,
+                    "commute: row2 gone (only 2 A departures)");
+            check(vis.get(R.id.row3) != null && vis.get(R.id.row3) == android.view.View.VISIBLE
+                    && vis.get(R.id.row4) != null && vis.get(R.id.row4) == android.view.View.VISIBLE,
+                    "commute: B rows visible on 3 and 4");
+            check(String.valueOf(texts.get(R.id.line_dest)).contains("/"),
+                    "commute: header shows both directions: '" + texts.get(R.id.line_dest) + "'");
+        }
+
+        // ---------------------------------------------------------------- v1.1.0: adapted-day chip
+        System.out.println("[adapted day]");
+        check(cat.adapted != null && cat.adapted.containsKey("20261107"),
+                "adapted: catalog flags 2026-11-07 (demo day)");
+        check(cat.isAdapted("20261107", "4-L5"), "adapted: L5 flagged on 2026-11-07");
+        check(cat.isAdapted("20261107", "4-T1"), "adapted: T1 flagged on 2026-11-07");
+        check(!cat.isAdapted("20261114", "4-L5"), "adapted: L5 NOT flagged on regular 2026-11-14");
+        if (suquetId != null) {
+            check(cat.stopAdapted("20261107", suquetId),
+                    "adapted: whole-stop Suquet flagged on 2026-11-07");
+            check(!cat.stopAdapted("20261114", suquetId),
+                    "adapted: whole-stop Suquet NOT flagged on 2026-11-14");
+        }
+        java.time.LocalDate nov7d = java.time.LocalDate.of(2026, 11, 7);
+        java.time.LocalDate nov14d = java.time.LocalDate.of(2026, 11, 14);
+        long nov7 = nov7d.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                + 20L * 3600L * 1000L;
+        long nov14 = nov14d.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                + 20L * 3600L * 1000L;
+        check("20261107".equals(RefreshLogic.ymdOf(nov7)), "adapted: ymdOf(nov 7 evening)");
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 35, cfgSyn, cat, synDeps, nov7, false);
+        if (awm.updates.size() == 1) {
+            Map<Integer, Object> texts = textsByView((RemoteViews) awm.updates.get(0)[1]);
+            check(String.valueOf(texts.get(R.id.updated)).toLowerCase().contains("adapt"),
+                    "adapted: footer carries the chip on 2026-11-07: '" + texts.get(R.id.updated) + "'");
+        }
+        awm.clearUpdates();
+        RefreshLogic.render(ctx, awm, 36, cfgSyn, cat, synDeps, nov14, false);
+        if (awm.updates.size() == 1) {
+            Map<Integer, Object> texts = textsByView((RemoteViews) awm.updates.get(0)[1]);
+            check(!String.valueOf(texts.get(R.id.updated)).toLowerCase().contains("adapt"),
+                    "adapted: no chip on regular 2026-11-14: '" + texts.get(R.id.updated) + "'");
+        }
+
+        // ---------------------------------------------------------------- v1.1.0: traffic RSS
+        System.out.println("[traffic rss]");
+        String rss = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Divia</title>"
+                + "<item><title><![CDATA[Manifestation le samedi 7 novembre 2026]]></title>"
+                + "<link>https://information.divia.fr/?p=51977</link>"
+                + "<guid>https://information.divia.fr/?p=51977</guid>"
+                + "<pubDate>Thu, 05 Nov 2026 10:39:50 +0000</pubDate>"
+                + "<category><![CDATA[Info grève]]></category></item>"
+                + "<item><title>Profite du PASS combiné Foire &#8211; promo</title>"
+                + "<link>https://information.divia.fr/?p=51956</link>"
+                + "<guid>https://information.divia.fr/?p=51956</guid>"
+                + "<pubDate>Thu, 22 Oct 2026 05:08:00 +0000</pubDate>"
+                + "<category><![CDATA[Nos actus]]></category></item>"
+                + "<item><title>Assemblée générale ordinaire</title>"
+                + "<link>https://information.divia.fr/?p=1</link>"
+                + "<guid>https://information.divia.fr/?p=1</guid>"
+                + "<pubDate>Fri, 06 Nov 2026 08:00:00 +0000</pubDate>"
+                + "<category><![CDATA[Info trafic]]></category></item>"
+                + "</channel></rss>";
+        List<TrafficFeed.Item> items = TrafficFeed.parse(rss.getBytes(StandardCharsets.UTF_8));
+        check(items.size() == 3, "rss: 3 items parsed, got " + items.size());
+        if (items.size() == 3) {
+            check("Manifestation le samedi 7 novembre 2026".equals(items.get(0).title),
+                    "rss: CDATA title unwrapped");
+            check("Info grève".equals(items.get(0).category), "rss: category parsed");
+            check(items.get(1).title.contains("\u2013"),
+                    "rss: numeric entity decoded: '" + items.get(1).title + "'");
+            check(items.get(0).pubDateMs > 0 && items.get(1).pubDateMs > 0
+                            && items.get(0).pubDateMs > items.get(1).pubDateMs,
+                    "rss: pubDates parsed and ordered");
+            check(TrafficFeed.isDisruption(items.get(0)), "rss: demo post is a disruption");
+            check(!TrafficFeed.isDisruption(items.get(1)), "rss: promo post is not a disruption");
+            check(TrafficFeed.isDisruption(items.get(2)),
+                    "rss: neutral title with 'Info trafic' category is a disruption");
+        }
+
+        // ---------------------------------------------------------------- v1.1.0: notifier
+        System.out.println("[notifier]");
+        ctx.notificationManager.posted.clear();
+        ctx.notificationManager.channels.clear();
+        Notifier.postDepartureAlert(ctx, 55, "L5", "Université", 4, "20:13", "+3\u2032");
+        check(ctx.notificationManager.posted.size() == 1,
+                "notifier: one departure notification posted");
+        if (!ctx.notificationManager.posted.isEmpty()) {
+            Object[] entry = ctx.notificationManager.posted.get(0);
+            check(((Integer) entry[0]).intValue() == 55, "notifier: id is the widget id");
+            android.app.Notification n = (android.app.Notification) entry[1];
+            check(n.title.contains("L5") && n.title.contains("4"),
+                    "notifier: title '" + n.title + "'");
+            check(n.text.contains("Université") && n.text.contains("20:13") && n.text.contains("+"),
+                    "notifier: text '" + n.text + "'");
+            check(n.pi != null && "activity".equals(n.pi.kind)
+                            && n.pi.intent.className != null
+                            && n.pi.intent.className.contains("HomeActivity"),
+                    "notifier: tap opens the app");
+        }
+        check(ctx.notificationManager.channels.contains("departures")
+                        && ctx.notificationManager.channels.contains("trafic"),
+                "notifier: both channels created");
+        Notifier.postTraffic(ctx, "Grève le jeudi 5 novembre 2026",
+                "https://information.divia.fr/?p=52268");
+        check(ctx.notificationManager.posted.size() == 2, "notifier: traffic notification posted");
+        if (ctx.notificationManager.posted.size() == 2) {
+            android.app.Notification tn =
+                    (android.app.Notification) ctx.notificationManager.posted.get(1)[1];
+            check("android.intent.action.VIEW".equals(tn.pi.intent.action),
+                    "notifier: traffic tap is an ACTION_VIEW");
+            check(tn.pi.intent.data != null
+                            && String.valueOf(tn.pi.intent.data).contains("information.divia.fr"),
+                    "notifier: traffic tap carries the link");
+        }
+
+        // ---------------------------------------------------------------- v1.1.0: alert scheduling
+        System.out.println("[alert scheduling]");
+        ctx.alarmManager.exactCalls.clear();
+        ctx.alarmManager.windowCalls.clear();
+        ctx.alarmManager.cancels.clear();
+        long depAt = System.currentTimeMillis() / 1000L + 600L;
+        WidgetPrefs.setAlert(ctx, 60, new WidgetPrefs.Alert("trip-x", depAt, 5, "L5", "Université"));
+        NotifyScheduler.schedule(ctx, 60);
+        check(ctx.alarmManager.exactCalls.size() == 1, "alert: one exact alarm armed");
+        if (!ctx.alarmManager.exactCalls.isEmpty()) {
+            Object[] c = ctx.alarmManager.exactCalls.get(0);
+            long want = (depAt - 300L) * 1000L;
+            check(Math.abs(((Long) c[1]).longValue() - want) < 5000L,
+                    "alert: fires 5 min before the pinned departure");
+            PendingIntent pi = (PendingIntent) c[2];
+            check("broadcast".equals(pi.kind) && pi.intent.cls == NotifyReceiver.class
+                            && "com.zai.divia.ACTION_ALERT".equals(pi.intent.action),
+                    "alert: targets NotifyReceiver");
+            check(pi.intent.getIntExtra(NotifyScheduler.EXTRA_WIDGET, -1) == 60,
+                    "alert: carries the widget id");
+        }
+        NotifyScheduler.cancel(ctx, 60);
+        check(WidgetPrefs.getAlert(ctx, 60) == null, "alert: cancel clears the stored alert");
+        check(ctx.alarmManager.cancels.size() >= 1, "alert: cancel removes the alarm");
+        // rescheduleAll (the boot path) with two pending alerts.
+        WidgetPrefs.setAlert(ctx, 60, new WidgetPrefs.Alert("trip-a", depAt + 300L, 5, "L5", "Université"));
+        WidgetPrefs.setAlert(ctx, 61, new WidgetPrefs.Alert("trip-b", depAt + 600L, 10, "T1", "Valmy"));
+        ctx.alarmManager.exactCalls.clear();
+        NotifyScheduler.rescheduleAll(ctx);
+        check(ctx.alarmManager.exactCalls.size() == 2, "alert: rescheduleAll re-arms both alerts");
+        check(WidgetPrefs.alertWidgetIds(ctx).size() == 2,
+                "alert: alertWidgetIds lists both widgets");
+        // No exact-alarm grant (Android 12+ revocation) -> window fallback.
+        ctx.alarmManager.exactAllowed = false;
+        ctx.alarmManager.exactCalls.clear();
+        ctx.alarmManager.windowCalls.clear();
+        NotifyScheduler.schedule(ctx, 61);
+        check(ctx.alarmManager.exactCalls.isEmpty() && ctx.alarmManager.windowCalls.size() == 1,
+                "alert: no exact grant -> window alarm");
+        ctx.alarmManager.exactAllowed = true;
+        WidgetPrefs.clearAlert(ctx, 60);
+        WidgetPrefs.clearAlert(ctx, 61);
+
         // ---------------------------------------------------------------- placeholder
         System.out.println("[placeholder]");
         awm.clearUpdates();
@@ -418,13 +664,15 @@ public final class RenderHarness {
             check(nonEmpty(texts.get(R.id.stop_name)), "placeholder: stop_name text set");
             check(nonEmpty(texts.get(R.id.line_dest)), "placeholder: line_dest text set");
             check(nonEmpty(texts.get(R.id.empty_status)), "placeholder: empty_status text set");
+            check(bitmapByView(rv).get(R.id.line_badge) != null,
+                    "placeholder: badge bitmap set (neutral pill)");
             Map<Integer, Integer> vis = visByView(rv);
             check(vis.get(R.id.empty_status) != null
                             && vis.get(R.id.empty_status) == android.view.View.VISIBLE,
                     "placeholder: empty_status visible");
             boolean rowsGone = true;
-            for (int[] row : new int[][]{{R.id.row0}, {R.id.row1}, {R.id.row2}}) {
-                Integer v = vis.get(row[0]);
+            for (int rid : new int[]{R.id.row0, R.id.row1, R.id.row2, R.id.row3, R.id.row4}) {
+                Integer v = vis.get(rid);
                 if (v == null || v != android.view.View.GONE) rowsGone = false;
             }
             check(rowsGone, "placeholder: all rows gone");
@@ -487,17 +735,24 @@ public final class RenderHarness {
         }
         check(sawPlaceholderFor11, "refreshAll: unconfigured widget 11 got the placeholder");
 
-        // ---------------------------------------------------------------- alarm
+        // ---------------------------------------------------------------- alarm (adaptive cadence)
         System.out.println("[alarm]");
         ctx.alarmManager.setRepeatingCalls.clear();
+        ctx.alarmManager.windowCalls.clear();
+        ctx.alarmManager.exactCalls.clear();
+        ctx.alarmManager.setCalls.clear();
         ctx.alarmManager.cancels.clear();
         PendingIntent.created().clear();
         AlarmScheduler.schedule(ctx);
-        check(ctx.alarmManager.setRepeatingCalls.size() == 1, "alarm: one repeating alarm set");
-        if (!ctx.alarmManager.setRepeatingCalls.isEmpty()) {
-            Object[] call = ctx.alarmManager.setRepeatingCalls.get(0);
-            check(((Long) call[2]).longValue() == AlarmScheduler.INTERVAL_MS,
-                    "alarm: interval is " + AlarmScheduler.INTERVAL_MS + " ms");
+        check(ctx.alarmManager.windowCalls.size() == 1,
+                "alarm: one window alarm set (self-rescheduling, adaptive)");
+        if (!ctx.alarmManager.windowCalls.isEmpty()) {
+            Object[] call = ctx.alarmManager.windowCalls.get(0);
+            long trigger = ((Long) call[1]).longValue();
+            long want = System.currentTimeMillis() + AlarmScheduler.nextDelayMs(System.currentTimeMillis());
+            check(Math.abs(trigger - want) < 15000L,
+                    "alarm: trigger ~ now + adaptive delay (" + (trigger - System.currentTimeMillis())
+                            + " ms from now)");
             PendingIntent pi = (PendingIntent) call[3];
             check("broadcast".equals(pi.kind), "alarm: PendingIntent is broadcast");
             check(pi.intent.cls == RefreshReceiver.class, "alarm: targets RefreshReceiver");
@@ -506,6 +761,20 @@ public final class RenderHarness {
         }
         AlarmScheduler.cancel(ctx);
         check(ctx.alarmManager.cancels.size() >= 1, "alarm: cancel removes the alarm");
+
+        // Cadence boundaries: 5 min by day, 30 min in the night gap.
+        check(AlarmScheduler.nextDelayMs(atTime(14, 0)) == AlarmScheduler.DAY_INTERVAL_MS,
+                "cadence: 14:00 -> 5 min");
+        check(AlarmScheduler.nextDelayMs(atTime(0, 29)) == AlarmScheduler.DAY_INTERVAL_MS,
+                "cadence: 00:29 -> 5 min");
+        check(AlarmScheduler.nextDelayMs(atTime(0, 30)) == AlarmScheduler.NIGHT_INTERVAL_MS,
+                "cadence: 00:30 -> 30 min");
+        check(AlarmScheduler.nextDelayMs(atTime(1, 0)) == AlarmScheduler.NIGHT_INTERVAL_MS,
+                "cadence: 01:00 -> 30 min");
+        check(AlarmScheduler.nextDelayMs(atTime(5, 0)) == AlarmScheduler.NIGHT_INTERVAL_MS,
+                "cadence: 05:00 -> 30 min");
+        check(AlarmScheduler.nextDelayMs(atTime(5, 30)) == AlarmScheduler.DAY_INTERVAL_MS,
+                "cadence: 05:30 -> 5 min");
 
         // ---------------------------------------------------------------- prefs
         System.out.println("[prefs]");
@@ -626,9 +895,35 @@ public final class RenderHarness {
 
     // ---------------------------------------------------------------- helpers
 
+    /** A Config with the v1.1.0 row knobs preset (auto when rows=0). */
+    static WidgetPrefs.Config newCfg(int rows, int heightDp) {
+        WidgetPrefs.Config c = new WidgetPrefs.Config();
+        c.rows = rows;
+        c.heightDp = heightDp;
+        return c;
+    }
+
+    /** Today at the given local time, for cadence boundary tests. */
+    static long atTime(int hour, int minute) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hour);
+        cal.set(java.util.Calendar.MINUTE, minute);
+        cal.set(java.util.Calendar.SECOND, 0);
+        cal.set(java.util.Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
+
     static void assertRender(AppWidgetManager awm, int widgetId, Set<Integer> validIds,
                              Map<Integer, String> idByName, int depCount, String label,
                              String expectedBadge, String expectedStop) {
+        assertRender(awm, widgetId, validIds, idByName, depCount, label,
+                expectedBadge, expectedStop, new WidgetPrefs.Config());
+    }
+
+    static void assertRender(AppWidgetManager awm, int widgetId, Set<Integer> validIds,
+                             Map<Integer, String> idByName, int depCount, String label,
+                             String expectedBadge, String expectedStop,
+                             WidgetPrefs.Config cfg) {
         check(awm.updates.size() == 1, label + ": exactly 1 update, got " + awm.updates.size());
         if (awm.updates.isEmpty()) return;
         int id = (Integer) awm.updates.get(0)[0];
@@ -651,42 +946,67 @@ public final class RenderHarness {
                         && (!nonEmpty(expectedStop)
                             || String.valueOf(texts.get(R.id.stop_name)).contains(expectedStop)),
                 label + ": stop name '" + texts.get(R.id.stop_name) + "'");
-        if (expectedBadge != null) {
-            check(expectedBadge.equals(texts.get(R.id.line_badge)),
-                    label + ": badge is " + expectedBadge);
+        // v1.1.0: the badge is a bitmap painted in the line color.
+        android.graphics.Bitmap badge = bitmapByView(rv).get(R.id.line_badge);
+        check(badge != null, label + ": badge bitmap set");
+        if (badge != null && expectedBadge != null) {
+            check(badge.drawnTexts.contains(expectedBadge),
+                    label + ": badge bitmap drawn '" + expectedBadge + "', got " + badge.drawnTexts);
         }
         check(nonEmpty(texts.get(R.id.line_dest)), label + ": line_dest set");
         check(nonEmpty(texts.get(R.id.updated)), label + ": footer set");
 
         Map<Integer, Integer> vis = visByView(rv);
+        int wantVisible = Math.min(RefreshLogic.effRows(cfg), depCount);
         int visible = 0;
-        for (int rid : new int[]{R.id.row0, R.id.row1, R.id.row2}) {
+        for (int rid : new int[]{R.id.row0, R.id.row1, R.id.row2, R.id.row3, R.id.row4}) {
             Integer v = vis.get(rid);
             if (v != null && v == android.view.View.VISIBLE) visible++;
         }
-        check(visible == Math.min(3, depCount),
-                label + ": " + visible + " visible rows for " + depCount + " departures");
-        for (int i = 0; i < Math.min(3, depCount); i++) {
-            int dest = new int[]{R.id.dest0, R.id.dest1, R.id.dest2}[i];
-            int cnt = new int[]{R.id.count0, R.id.count1, R.id.count2}[i];
-            int clk = new int[]{R.id.clock0, R.id.clock1, R.id.clock2}[i];
-            check(nonEmpty(texts.get(dest)) && nonEmpty(texts.get(cnt)) && nonEmpty(texts.get(clk)),
-                    label + ": row " + i + " texts set ('" + texts.get(dest) + "' '"
-                            + texts.get(cnt) + "' '" + texts.get(clk) + "')");
+        check(visible == wantVisible,
+                label + ": " + visible + " visible rows for " + depCount + " departures (rows="
+                        + RefreshLogic.effRows(cfg) + ")");
+        int[] destIds = {R.id.dest0, R.id.dest1, R.id.dest2, R.id.dest3, R.id.dest4};
+        int[] cntIds = {R.id.count0, R.id.count1, R.id.count2, R.id.count3, R.id.count4};
+        int[] clkIds = {R.id.clock0, R.id.clock1, R.id.clock2, R.id.clock3, R.id.clock4};
+        for (int i = 0; i < wantVisible; i++) {
+            check(nonEmpty(texts.get(destIds[i])) && nonEmpty(texts.get(cntIds[i]))
+                            && nonEmpty(texts.get(clkIds[i])),
+                    label + ": row " + i + " texts set ('" + texts.get(destIds[i]) + "' '"
+                            + texts.get(cntIds[i]) + "' '" + texts.get(clkIds[i]) + "')");
         }
 
+        // Click actions: root = refresh broadcast; each visible row opens
+        // the NotifyActivity alert sheet with its departure in the extras.
         List<RemoteViews.Act> clicks = acts(rv, "click");
-        check(clicks.size() == 1, label + ": exactly 1 click PendingIntent");
-        if (clicks.size() == 1) {
-            check(clicks.get(0).viewId == R.id.widget_root, label + ": click on widget_root");
-            PendingIntent pi = (PendingIntent) clicks.get(0).value;
-            check("broadcast".equals(pi.kind), label + ": click PendingIntent is broadcast");
-            check(pi.intent.cls == RefreshReceiver.class, label + ": click targets RefreshReceiver");
-            check("com.zai.divia.ACTION_REFRESH".equals(pi.intent.action),
-                    label + ": click action ACTION_REFRESH");
-            check(pi.requestCode == widgetId, label + ": click requestCode is the widget id");
-            Object extra = pi.intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
-            check(((Integer) extra) == widgetId, label + ": click carries the widget id");
+        int rowClicks = 0;
+        for (RemoteViews.Act a : clicks) {
+            if (a.viewId != R.id.widget_root) rowClicks++;
+        }
+        check(clicks.size() == 1 + wantVisible,
+                label + ": 1 root click + " + wantVisible + " row clicks, got " + clicks.size());
+        for (RemoteViews.Act a : clicks) {
+            PendingIntent pi = (PendingIntent) a.value;
+            if (a.viewId == R.id.widget_root) {
+                check("broadcast".equals(pi.kind), label + ": root click PendingIntent is broadcast");
+                check(pi.intent.cls == RefreshReceiver.class, label + ": root click targets RefreshReceiver");
+                check("com.zai.divia.ACTION_REFRESH".equals(pi.intent.action),
+                        label + ": root click action ACTION_REFRESH");
+                check(pi.requestCode == widgetId, label + ": root click requestCode is the widget id");
+                Object extra = pi.intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
+                check(((Integer) extra) == widgetId, label + ": root click carries the widget id");
+            } else {
+                check("activity".equals(pi.kind), label + ": row click PendingIntent is activity");
+                check(pi.intent.cls == NotifyActivity.class, label + ": row click opens NotifyActivity");
+                Object wid = pi.intent.getIntExtra(NotifyScheduler.EXTRA_WIDGET, -1);
+                check(((Integer) wid) == widgetId, label + ": row click carries the widget id");
+                long t = pi.intent.getLongExtra("time", 0L);
+                check(t > 0, label + ": row click carries the departure time");
+                check(nonEmpty(pi.intent.getStringExtra("line")),
+                        label + ": row click carries the line");
+                check(nonEmpty(pi.intent.getStringExtra("head")),
+                        label + ": row click carries the headsign");
+            }
         }
     }
 
@@ -706,6 +1026,16 @@ public final class RenderHarness {
     static Map<Integer, Object> textsByView(RemoteViews rv) {
         Map<Integer, Object> m = new HashMap<Integer, Object>();
         for (RemoteViews.Act a : rv.acts) if (a.op.equals("text")) m.put(a.viewId, a.value);
+        return m;
+    }
+
+    static Map<Integer, android.graphics.Bitmap> bitmapByView(RemoteViews rv) {
+        Map<Integer, android.graphics.Bitmap> m = new HashMap<Integer, android.graphics.Bitmap>();
+        for (RemoteViews.Act a : rv.acts) {
+            if (a.op.equals("bitmap") && a.value instanceof android.graphics.Bitmap) {
+                m.put(a.viewId, (android.graphics.Bitmap) a.value);
+            }
+        }
         return m;
     }
 

@@ -63,6 +63,15 @@ public class DiviaWidgetProvider extends AppWidgetProvider {
         // repaint immediately (local only) so the very first paint never
         // depends on the feed being reachable.
         try {
+            // v1.1.0: remember the reported height (dp) — the row count is
+            // derived from it (2 rows small / 3 default / 5 tall).
+            if (newOptions != null) {
+                try {
+                    int h = newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+                    if (h > 0) WidgetPrefs.setHeightDp(context, appWidgetId, h);
+                } catch (Throwable ignored) {
+                }
+            }
             RefreshLogic.repaintAll(context, new int[]{appWidgetId});
         } catch (Throwable t) {
             WidgetPrefs.setLastError(context, "options: " + t);
@@ -72,6 +81,11 @@ public class DiviaWidgetProvider extends AppWidgetProvider {
     @Override
     public void onDeleted(Context context, int[] appWidgetIds) {
         for (int id : appWidgetIds) {
+            try {
+                // Kill any pending "time to leave" alarm for this widget.
+                NotifyScheduler.cancel(context, id);
+            } catch (Throwable ignored) {
+            }
             try {
                 WidgetPrefs.delete(context, id);
                 synchronized (RefreshLogic.CACHE) {

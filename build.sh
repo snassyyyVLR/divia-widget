@@ -59,8 +59,8 @@ echo "[2/8] aapt2 link (+assets, R.java, stable ids)"
     --java "$OUT/gen" \
     --min-sdk-version 21 \
     --target-sdk-version 34 \
-    --version-code 8 \
-    --version-name 2.1.1 \
+    --version-code 10 \
+    --version-name 1.1.0 \
     --auto-add-overlay \
     --stable-ids "$STABLE" \
     --emit-ids "$OUT/emitted-ids.txt" \

@@ -30,7 +30,8 @@ mkdir -p "$OUT"
 SRCS=$(find "$PROJ/src" -name '*.java' \
     ! -name 'ConfigActivity.java' \
     ! -name 'HomeActivity.java' \
-    ! -name 'SettingsActivity.java')
+    ! -name 'SettingsActivity.java' \
+    ! -name 'NotifyActivity.java')
 STUBS=$(find "$PROJ/test/stubs" -name '*.java')
 
 if [ -f "$ECJ" ]; then
@@ -49,6 +50,6 @@ else
         "$PROJ/test/com/zai/divia/LayoutWhitelist.java"
 fi
 
-java -cp "$OUT" com.zai.divia.LayoutWhitelist
+java -Ddivia.proj="$PROJ" -cp "$OUT" com.zai.divia.LayoutWhitelist
 echo
-java -cp "$OUT" com.zai.divia.RenderHarness
+java -Ddivia.proj="$PROJ" -cp "$OUT" com.zai.divia.RenderHarness

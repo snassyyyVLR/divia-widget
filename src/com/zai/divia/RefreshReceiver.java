@@ -72,6 +72,12 @@ public class RefreshReceiver extends BroadcastReceiver {
                     // never crash the process from a background refresh
                     WidgetPrefs.setLastError(context, "refresh: " + t);
                 } finally {
+                    // Self-rescheduling alarm (v1.1.0): the next wakeup lands one
+                    // adaptive interval away — 5 min by day, 30 min at night.
+                    try {
+                        AlarmScheduler.schedule(context);
+                    } catch (Throwable ignored) {
+                    }
                     result.finish();
                 }
             }

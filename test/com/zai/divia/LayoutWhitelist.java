@@ -28,7 +28,8 @@ import org.w3c.dom.NodeList;
  */
 public final class LayoutWhitelist {
 
-    static final String PROJ = "/home/z/my-project/scripts/diviaproj";
+    /** Project root: injected by run-tests.sh (-Ddivia.proj=...). */
+    static final String PROJ = System.getProperty("divia.proj", ".");
     static int pass = 0, fail = 0;
 
     /**
@@ -46,10 +47,10 @@ public final class LayoutWhitelist {
     /** Every id the render code addresses via RemoteViews actions. */
     static final Set<String> NEEDED_IDS = new LinkedHashSet<String>(Arrays.asList(
             "widget_root", "line_badge", "stop_name", "line_dest",
-            "row0", "row1", "row2",
-            "dest0", "dest1", "dest2",
-            "count0", "count1", "count2",
-            "clock0", "clock1", "clock2",
+            "row0", "row1", "row2", "row3", "row4",
+            "dest0", "dest1", "dest2", "dest3", "dest4",
+            "count0", "count1", "count2", "count3", "count4",
+            "clock0", "clock1", "clock2", "clock3", "clock4",
             "empty_status", "updated"));
 
     public static void main(String[] args) throws Exception {
@@ -73,15 +74,18 @@ public final class LayoutWhitelist {
         }
 
         // Cross-check: the ids referenced by the Java render arrays must be
-        // exactly the row/dest/count/clock ids present in the layout.
+        // exactly the row/dest/count/clock ids present in the layout (v1.1.0:
+        // five rows — 3 always + 2 shown on tall widgets).
         Set<String> rowIds = new HashSet<String>();
         for (String n : declaredIds) {
             if (n.startsWith("row") || n.startsWith("dest")
                     || n.startsWith("count") || n.startsWith("clock")) rowIds.add(n);
         }
         check(rowIds.equals(new HashSet<String>(Arrays.asList(
-                "row0", "row1", "row2", "dest0", "dest1", "dest2",
-                "count0", "count1", "count2", "clock0", "clock1", "clock2"))),
+                "row0", "row1", "row2", "row3", "row4",
+                "dest0", "dest1", "dest2", "dest3", "dest4",
+                "count0", "count1", "count2", "count3", "count4",
+                "clock0", "clock1", "clock2", "clock3", "clock4"))),
                 "no stray row/dest/count/clock ids (RemoteViews would crash the launcher)");
 
         System.out.println("[widget provider info]");

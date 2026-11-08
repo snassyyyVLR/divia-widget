@@ -47,6 +47,9 @@ public class ConfigActivity extends Activity {
     private static final int STATE_LINE_STOPS = 2;
     private static final int STATE_ALL_STOPS = 3;
 
+    /** Extra: jump straight into picking the RETURN-direction stop. */
+    public static final String EXTRA_PICK_RETURN = "pickReturn";
+
     private int appWidgetId = -1;          // widget being configured (or edited)
 
     private Catalog catalog;
@@ -54,6 +57,13 @@ public class ConfigActivity extends Activity {
     private boolean lineMode = true;
     private Catalog.Route selectedRoute;
     private int selectedDir = 0;
+
+    // v1.1.0 commute flow: after the primary stop is chosen, one optional
+    // extra step picks the stop of the opposite direction.
+    private boolean pickingReturn = false;
+    private boolean returnFromWizard = false;   // back = save single; else keep old config
+    private String primaryStopId = "";
+    private String returnRouteId = "";   // route of the shortcut flow
 
     private TextView title;
     private TextView subtitle;
@@ -107,6 +117,9 @@ public class ConfigActivity extends Activity {
 
         modeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             public void onCheckedChanged(RadioGroup group, int checkedId) {
+                // Switching mode cancels the return-picker shortcut.
+                pickingReturn = false;
+                returnFromWizard = false;
                 lineMode = checkedId == R.id.mode_line_btn;
                 state = lineMode ? STATE_LINES : STATE_ALL_STOPS;
                 selectedRoute = null;
@@ -146,6 +159,17 @@ public class ConfigActivity extends Activity {
             state = lineMode ? STATE_LINES : STATE_ALL_STOPS;
         }
 
+        // Manage-dialog flow "add / change the return direction": skip
+        // straight to the return stop picker for the configured line.
+        if (intent != null && intent.getBooleanExtra(EXTRA_PICK_RETURN, false)
+                && cfg != null && cfg.lineMode && !cfg.stopId.isEmpty() && catalogOrLater(cfg)) {
+            pickingReturn = true;
+            primaryStopId = cfg.stopId;
+            returnRouteId = cfg.routeId;
+            selectedDir = 1 - cfg.dir;
+            state = STATE_LINE_STOPS;
+        }
+
         // Load the catalog off the main thread.
         new Thread(new Runnable() {
             public void run() {
@@ -156,6 +180,12 @@ public class ConfigActivity extends Activity {
                 }
                 handler.post(new Runnable() {
                     public void run() {
+                        // Return-picker shortcut: resolve the route now that
+                        // the catalog is here.
+                        if (pickingReturn && selectedRoute == null
+                                && catalog != null && !returnRouteId.isEmpty()) {
+                            selectedRoute = catalog.routes.get(returnRouteId);
+                        }
                         applyState();
                     }
                 });
@@ -163,6 +193,15 @@ public class ConfigActivity extends Activity {
         }, "divia-catalog").start();
 
         applyState();
+    }
+
+    /** @return true when the return-picker shortcut can be taken (route known). */
+    private boolean catalogOrLater(WidgetPrefs.Config cfg) {
+        // The catalog loads asynchronously; the shortcut only needs the
+        // route id, which we can resolve when the catalog arrives. Simplest:
+        // accept the shortcut and let rebuild() show "…" until then — the
+        // stop list needs the catalog anyway.
+        return cfg.routeId != null && !cfg.routeId.isEmpty();
     }
 
     @Override
@@ -174,6 +213,17 @@ public class ConfigActivity extends Activity {
     /** @return true when the back action was consumed. */
     private boolean goBack() {
         if (state == STATE_LINE_STOPS) {
+            if (pickingReturn) {
+                // Wizard flow: the primary pick already exists — save the
+                // single-direction widget instead of dropping everything.
+                // Manage-dialog flow: keep the existing config untouched.
+                if (returnFromWizard && selectedRoute != null && !primaryStopId.isEmpty()) {
+                    saveSingle();
+                } else {
+                    finish();
+                }
+                return true;
+            }
             state = STATE_DIRS;
             applyState();
             return true;
@@ -203,7 +253,14 @@ public class ConfigActivity extends Activity {
                 break;
             }
             case STATE_LINE_STOPS: {
-                saveWidget(e.routeId, e.dir, e.stopId, true);
+                if (pickingReturn) {
+                    // Primary direction was picked first; this is the return leg.
+                    saveCommute(selectedRoute != null ? selectedRoute.id : "",
+                            1 - selectedDir, primaryStopId, selectedDir, e.stopId);
+                } else {
+                    primaryStopId = e.stopId;
+                    askReturnDirection();
+                }
                 break;
             }
             case STATE_ALL_STOPS: {
@@ -213,15 +270,70 @@ public class ConfigActivity extends Activity {
         }
     }
 
+    /** "Also show the return direction?" — one question, two buttons. */
+    private void askReturnDirection() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.commute_ask)
+                .setMessage(R.string.commute_body)
+                .setPositiveButton(R.string.commute_yes,
+                        new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                pickingReturn = true;
+                                returnFromWizard = true;
+                                selectedDir = 1 - selectedDir;   // opposite leg
+                                applyState();
+                            }
+                        })
+                .setNegativeButton(R.string.commute_no,
+                        new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                saveSingle();
+                            }
+                        })
+                .show();
+    }
+
+    private void saveSingle() {
+        saveWidget(selectedRoute != null ? selectedRoute.id : "", selectedDir,
+                primaryStopId, true);
+    }
+
+    /** Saves a single-direction widget (keeping rows/height of the old config). */
     private void saveWidget(String routeId, int dir, String stopId, boolean isLineMode) {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
-        WidgetPrefs.Config cfg = new WidgetPrefs.Config();
-        cfg.lineMode = isLineMode;
-        cfg.routeId = routeId != null ? routeId : "";
-        cfg.dir = dir;
-        cfg.stopId = stopId;
-        WidgetPrefs.save(this, appWidgetId, cfg);
+        WidgetPrefs.Config cfg = WidgetPrefs.load(this, appWidgetId);
+        if (cfg == null) cfg = new WidgetPrefs.Config();
+        WidgetPrefs.Config fresh = new WidgetPrefs.Config();
+        fresh.lineMode = isLineMode;
+        fresh.routeId = routeId != null ? routeId : "";
+        fresh.dir = dir;
+        fresh.stopId = stopId;
+        fresh.rows = cfg.rows;
+        fresh.heightDp = cfg.heightDp;
+        WidgetPrefs.save(this, appWidgetId, fresh);
+        finishConfiguring();
+    }
 
+    /** Saves a two-direction (commute) widget on the selected route. */
+    private void saveCommute(String routeId, int dirPrimary, String stopPrimary,
+                             int dirReturn, String stopReturn) {
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
+        WidgetPrefs.Config cfg = WidgetPrefs.load(this, appWidgetId);
+        if (cfg == null) cfg = new WidgetPrefs.Config();
+        WidgetPrefs.Config fresh = new WidgetPrefs.Config();
+        fresh.lineMode = true;
+        fresh.routeId = routeId;
+        fresh.dir = dirPrimary;
+        fresh.stopId = stopPrimary;
+        fresh.dir2 = dirReturn;
+        fresh.stopId2 = stopReturn;
+        fresh.rows = cfg.rows;
+        fresh.heightDp = cfg.heightDp;
+        WidgetPrefs.save(this, appWidgetId, fresh);
+        finishConfiguring();
+    }
+
+    private void finishConfiguring() {
         // immediate refresh (arms the alarm too)
         RefreshLogic.kick(this);
 

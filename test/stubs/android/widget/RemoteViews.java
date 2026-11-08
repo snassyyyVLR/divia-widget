@@ -7,7 +7,7 @@ package android.widget;
 public class RemoteViews {
 
     public static final class Act {
-        public final String op;      // "text" | "vis" | "click" | "color"
+        public final String op;      // "text" | "vis" | "click" | "color" | "bitmap"
         public final int viewId;
         public final Object value;
         Act(String op, int viewId, Object value) {
@@ -38,5 +38,9 @@ public class RemoteViews {
 
     public void setOnClickPendingIntent(int viewId, android.app.PendingIntent pi) {
         acts.add(new Act("click", viewId, pi));
+    }
+
+    public void setImageViewBitmap(int viewId, android.graphics.Bitmap bm) {
+        acts.add(new Act("bitmap", viewId, bm));
     }
 }

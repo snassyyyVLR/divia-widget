@@ -22,6 +22,11 @@ public class BootReceiver extends BroadcastReceiver {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) return;
         AlarmScheduler.schedule(context);
+        try {
+            // Re-arm every pending "time to leave" alert after the reboot.
+            NotifyScheduler.rescheduleAll(context);
+        } catch (Throwable ignored) {
+        }
         final PendingResult result = goAsync();
         new Thread(new Runnable() {
             public void run() {

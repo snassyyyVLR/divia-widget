@@ -30,6 +30,7 @@ import java.util.zip.GZIPInputStream;
  *   D|route_id|direction|stop_id,stop_id,...
  *   B|route_id|direction|direction_label
  *   A|stop_id|line_short,line_short,...
+ *   X|yyyymmdd|route_id,route_id,...   (routes on an adapted/special plan that day)
  */
 public final class Catalog {
 
@@ -57,6 +58,9 @@ public final class Catalog {
     public final HashMap<String, String[]> lineStops = new HashMap<String, String[]>(160);   // "routeId|dir" -> ordered stop ids
     public final HashMap<String, String> dirLabels = new HashMap<String, String>(160);       // "routeId|dir" -> label
     public final HashMap<String, String[]> stopLines = new HashMap<String, String[]>(1300);  // stopId -> line short names
+
+    /** yyyymmdd -> route ids running an ADAPTED plan that day (strikes, demos, holidays). */
+    public final HashMap<String, String[]> adapted = new HashMap<String, String[]>(16);
 
     /** stop NAME -> every id of that physical stop (several quays share a name). */
     private HashMap<String, ArrayList<String>> idsByName;
@@ -99,6 +103,11 @@ public final class Catalog {
                 case 'A': {
                     String[] p = split(line, 3);
                     stopLines.put(p[1], p[2].split(","));
+                    break;
+                }
+                case 'X': {
+                    String[] p = split(line, 3);
+                    adapted.put(p[1], p[2].split(","));
                     break;
                 }
                 default: // ignore
@@ -212,5 +221,31 @@ public final class Catalog {
             sb.append(s);
         }
         return sb.toString();
+    }
+
+    // ------------------------------------------------------------ adapted days
+
+    /** True when the route runs an adapted (strike/demo/holiday) plan that day. */
+    public boolean isAdapted(String ymd, String routeId) {
+        String[] rs = adapted.get(ymd);
+        if (rs == null) return false;
+        for (String r : rs) if (r.equals(routeId)) return true;
+        return false;
+    }
+
+    /** True when ANY line serving the stop (any quay) is adapted that day. */
+    public boolean stopAdapted(String ymd, String stopId) {
+        String[] rs = adapted.get(ymd);
+        if (rs == null || rs.length == 0) return false;
+        String lines = stopLinesLabelAny(stopId);
+        if (lines.isEmpty()) return false;
+        // exact token match ("L5" must not match "L51" inside the joined list)
+        String[] tokens = lines.split(", ");
+        for (String rid : rs) {
+            Route r = routes.get(rid);
+            if (r == null) continue;
+            for (String t : tokens) if (t.equals(r.shortName)) return true;
+        }
+        return false;
     }
 }

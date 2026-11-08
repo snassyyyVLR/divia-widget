@@ -14,17 +14,20 @@ import android.widget.RemoteViews;
 import com.zai.divia.core.Catalog;
 import com.zai.divia.core.Departure;
 import com.zai.divia.core.DiviaApi;
+import com.zai.divia.core.TrafficFeed;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * The shared update engine — v2.0 clean rewrite.
+ * The shared update engine — v1.1.0.
  *
  * Downloads the feed once and renders every bound widget. All entry points
  * are called from worker threads (the alarm receiver's goAsync window, the
@@ -32,8 +35,8 @@ import java.util.List;
  * screen), and every one of them is crash-proof:
  *
  *  - No exception ever escapes a public entry point; each widget gets a
- *    RemoteViews push on every call even when the network, the feed or
- *    the catalog is broken.
+ *    RemoteViews push on every call even when the network, the feed or the
+ *    catalog is broken.
  *  - Local-only repaints never touch the network, so bind-time paints are
  *    sub-millisecond and safe to run synchronously inside onUpdate.
  *  - The layout pushed here (res/layout/widget_divia.xml) contains ONLY
@@ -41,6 +44,11 @@ import java.util.List;
  *    every run so a regression cannot ship again (the v1.x "Problem
  *    loading widget on every launcher" bug was a plain <View> divider
  *    inflating inside the launcher's process).
+ *
+ * v1.1.0 rendering: 2/3/5 rows (auto from the widget height), a bitmap line
+ * badge painted in the line's official color, an optional second direction
+ * (commute mode), an "horaires adaptés" chip on disruption days, and a
+ * per-row tap action that opens the time-to-leave alert sheet.
  */
 public final class RefreshLogic {
 
@@ -53,13 +61,20 @@ public final class RefreshLogic {
     /** Test seam for the JVM harness: when non-null, no network fetch happens. */
     static volatile byte[] sTestFeed;
 
-    private static final int[] ROW_IDS = {R.id.row0, R.id.row1, R.id.row2};
-    private static final int[] DEST_IDS = {R.id.dest0, R.id.dest1, R.id.dest2};
-    private static final int[] COUNT_IDS = {R.id.count0, R.id.count1, R.id.count2};
-    private static final int[] CLOCK_IDS = {R.id.clock0, R.id.clock1, R.id.clock2};
+    static final int MAX_ROWS = 5;
+    private static final int[] ROW_IDS = {R.id.row0, R.id.row1, R.id.row2, R.id.row3, R.id.row4};
+    private static final int[] DEST_IDS = {R.id.dest0, R.id.dest1, R.id.dest2, R.id.dest3, R.id.dest4};
+    private static final int[] COUNT_IDS = {R.id.count0, R.id.count1, R.id.count2, R.id.count3, R.id.count4};
+    private static final int[] CLOCK_IDS = {R.id.clock0, R.id.clock1, R.id.clock2, R.id.clock3, R.id.clock4};
 
     /** A vehicle this many seconds behind schedule is flagged as late. */
     static final int LATE_MIN_SEC = 120;
+
+    /** Traffic RSS poll interval (shared by every refresh path). */
+    static final long TRAFFIC_CHECK_MS = 30L * 60L * 1000L;
+    /** Only items newer than this ever ring (skip the historical backlog). */
+    static final long TRAFFIC_FRESH_MS = 24L * 3600L * 1000L;
+    static final int TRAFFIC_MAX_NOTIFY = 3;
 
     // ------------------------------------------------------------------ api
 
@@ -187,7 +202,17 @@ public final class RefreshLogic {
             try {
                 deps = DiviaApi.nextDepartures(feed, cat, cfg.stopId,
                         cfg.lineMode ? cfg.routeId : null,
-                        cfg.lineMode ? cfg.dir : -1, 3, nowSec);
+                        cfg.lineMode ? cfg.dir : -1, MAX_ROWS, nowSec);
+                // Commute mode: same line, opposite direction, second stop.
+                if (cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty()) {
+                    List<Departure> deps2 = DiviaApi.nextDepartures(feed, cat,
+                            cfg.stopId2, cfg.routeId, cfg.dir2, MAX_ROWS, nowSec);
+                    ArrayList<Departure> merged =
+                            new ArrayList<Departure>(deps.size() + deps2.size());
+                    merged.addAll(deps);
+                    merged.addAll(deps2);
+                    deps = merged;
+                }
             } catch (Throwable t) {
                 err = t;
             }
@@ -206,6 +231,9 @@ public final class RefreshLogic {
             safeRender(context, awm, id, cfg, cat, deps, nowSec * 1000L, false);
         }
         WidgetPrefs.setLastRefreshOk(context);
+
+        // ---- info-trafic watch (throttled, disruption posts only).
+        maybeCheckTraffic(context);
     }
 
     // -------------------------------------------------------------- repaint
@@ -272,10 +300,10 @@ public final class RefreshLogic {
     /** Placeholder shown by a bound-but-unconfigured widget: tap to set up. */
     static void renderPlaceholder(Context context, AppWidgetManager awm, int id) {
         RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_divia);
-        rv.setTextViewText(R.id.line_badge, "•");
+        setBadge(rv, context, "•", null);
         rv.setTextViewText(R.id.stop_name, context.getString(R.string.setup_title));
         rv.setTextViewText(R.id.line_dest, context.getString(R.string.setup_hint));
-        for (int i = 0; i < 3; i++) rv.setViewVisibility(ROW_IDS[i], android.view.View.GONE);
+        for (int i = 0; i < MAX_ROWS; i++) rv.setViewVisibility(ROW_IDS[i], android.view.View.GONE);
         rv.setViewVisibility(R.id.empty_status, android.view.View.VISIBLE);
         rv.setTextViewText(R.id.empty_status, context.getString(R.string.setup_hint2));
         rv.setTextViewText(R.id.updated, "");
@@ -303,31 +331,80 @@ public final class RefreshLogic {
         RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_divia);
 
         String stopName = cat != null ? cat.stopName(cfg.stopId) : cfg.stopId;
-        String badge;
-        String subLine;
+        boolean commute = cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty();
 
         Catalog.Route route = cat != null ? cat.routes.get(cfg.routeId) : null;
-        String lineShort = route != null ? route.shortName : "";
 
+        // ---- header badge: bitmap painted in the line's official color.
+        String badgeText;
+        String badgeColor;
         if (cfg.lineMode) {
-            badge = lineShort;
-            String label = cat != null ? cat.dirLabel(cfg.routeId, cfg.dir) : "";
-            subLine = label.isEmpty() ? "" : context.getString(R.string.direction_fmt, label);
+            badgeText = route != null ? route.shortName : "";
+            badgeColor = route != null ? route.colorHex : null;
+        } else if (!deps.isEmpty()) {
+            Catalog.Route r0 = cat != null ? cat.routes.get(deps.get(0).routeId) : null;
+            badgeText = r0 != null ? r0.shortName : deps.get(0).lineShort;
+            badgeColor = r0 != null ? r0.colorHex : null;
         } else {
-            badge = deps.isEmpty() ? "•" : deps.get(0).lineShort;
+            badgeText = "•";
+            badgeColor = null;
+        }
+        setBadge(rv, context, badgeText, badgeColor);
+
+        // ---- header texts.
+        String subLine;
+        if (cfg.lineMode) {
+            if (cat == null) {
+                subLine = "";
+            } else if (commute) {
+                String a = cat.dirLabel(cfg.routeId, cfg.dir);
+                String b = cat.dirLabel(cfg.routeId, cfg.dir2);
+                if (a.isEmpty()) subLine = b;
+                else if (b.isEmpty()) subLine = a;
+                else subLine = a + " / " + b;
+            } else {
+                String label = cat.dirLabel(cfg.routeId, cfg.dir);
+                subLine = label.isEmpty() ? "" : context.getString(R.string.direction_fmt, label);
+            }
+        } else {
             subLine = context.getString(R.string.all_lines);
         }
-
-        rv.setTextViewText(R.id.line_badge, badge);
         rv.setTextViewText(R.id.stop_name, stopName);
         rv.setTextViewText(R.id.line_dest, subLine);
 
-        for (int i = 0; i < 3; i++) {
-            if (i < deps.size()) {
-                Departure d = deps.get(i);
+        // ---- rows (split between the two directions in commute mode).
+        int rows = effRows(cfg);
+        int rowsA = commute ? (rows + 1) / 2 : rows;
+        int rowsB = commute ? rows / 2 : 0;
+        // The cached/merged list is [A-deps..., B-deps...]; b0 = index of the
+        // first B departure = the number of A departures in the list
+        // (defaults to deps.size() when the B leg found nothing).
+        int b0 = deps.size();
+        if (commute) {
+            for (int i = 0; i < deps.size(); i++) {
+                if (deps.get(i).direction != cfg.dir) { b0 = i; break; }
+            }
+        }
+        long nowSec = nowMs / 1000L;
+        for (int i = 0; i < MAX_ROWS; i++) {
+            Departure d = null;
+            if (commute) {
+                if (i < rowsA) {
+                    // A side: only while the entry at i is really an A departure.
+                    if (i < deps.size() && i < b0) d = deps.get(i);
+                } else {
+                    int j = i - rowsA;
+                    int k = b0 + j;
+                    if (j < rowsB && k < deps.size()) d = deps.get(k);
+                }
+            } else if (i < rows && i < deps.size()) {
+                d = deps.get(i);
+            }
+
+            if (d != null) {
                 String dest = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
                 rv.setTextViewText(DEST_IDS[i], dest);
-                rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowMs / 1000L));
+                rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
                 // Lateness: the times shown are already the live prediction,
                 // so a delay is baked into them; the "+N'" marker and the
                 // amber countdown make the deviation from the timetable
@@ -339,6 +416,21 @@ public final class RefreshLogic {
                 rv.setTextColor(COUNT_IDS[i], context.getResources().getColor(
                         late ? R.color.late : R.color.countdown));
                 rv.setViewVisibility(ROW_IDS[i], android.view.View.VISIBLE);
+
+                // Row tap -> time-to-leave alert sheet for this departure.
+                Intent row = new Intent(context, NotifyActivity.class);
+                row.putExtra(NotifyScheduler.EXTRA_WIDGET, id);
+                row.putExtra("trip", d.tripId != null ? d.tripId : "");
+                row.putExtra("time", d.timeSec);
+                row.putExtra("line", d.lineShort);
+                row.putExtra("head", d.headsign);
+                row.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+                android.app.PendingIntent rpi = android.app.PendingIntent.getActivity(
+                        context, 200000 + id * 10 + i, row,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                | android.app.PendingIntent.FLAG_IMMUTABLE);
+                rv.setOnClickPendingIntent(ROW_IDS[i], rpi);
             } else {
                 rv.setViewVisibility(ROW_IDS[i], android.view.View.GONE);
             }
@@ -352,6 +444,7 @@ public final class RefreshLogic {
             rv.setViewVisibility(R.id.empty_status, android.view.View.GONE);
         }
 
+        // ---- footer, with the disruption-day chip.
         String footer;
         if (offline) {
             if (cfg.lastOk > 0) {
@@ -363,10 +456,20 @@ public final class RefreshLogic {
         } else {
             footer = context.getString(R.string.updated_fmt, formatClock(context, nowMs));
         }
+        if (!offline && cat != null) {
+            String ymd = ymdOf(nowMs);
+            boolean adapted = cfg.lineMode
+                    ? cat.isAdapted(ymd, cfg.routeId)
+                    : cat.stopAdapted(ymd, cfg.stopId);
+            if (adapted) {
+                footer = context.getString(R.string.adapted_footer_fmt, footer);
+            }
+        }
         rv.setTextViewText(R.id.updated, footer);
 
-        // Tap the widget -> instant refresh. A broadcast is used (not a
-        // service) because Android 8+ forbids background service starts.
+        // Tap the widget (outside any row) -> instant refresh. A broadcast
+        // is used (not a service) because Android 8+ forbids background
+        // service starts.
         Intent tap = new Intent(RefreshReceiver.ACTION_REFRESH);
         tap.setClass(context, RefreshReceiver.class);
         tap.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
@@ -379,6 +482,73 @@ public final class RefreshLogic {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** Effective row count: the user override, or auto from the widget height. */
+    static int effRows(WidgetPrefs.Config cfg) {
+        int r = cfg.rows;
+        if (r <= 0) {
+            int h = cfg.heightDp;
+            if (h <= 0) h = 110;              // default 4x2-ish placement
+            r = h < 100 ? 2 : (h < 155 ? 3 : 5);
+        }
+        if (r < 2) r = 2;
+        if (r > MAX_ROWS) r = MAX_ROWS;
+        return r;
+    }
+
+    private static void setBadge(RemoteViews rv, Context c, String text, String colorHex) {
+        try {
+            android.graphics.Bitmap bm = BadgeRender.make(c, text, colorHex);
+            if (bm != null) rv.setImageViewBitmap(R.id.line_badge, bm);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "badge: " + t);
+        }
+    }
+
+    /** yyyymmdd of the given epoch-ms in the device's local timezone. */
+    static String ymdOf(long ms) {
+        try {
+            return new SimpleDateFormat("yyyyMMdd", Locale.US)
+                    .format(new Date(ms));
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /**
+     * Polls the info-trafic RSS at most every 30 minutes, and notifies the
+     * DISRUPTION posts published since the last check (strikes, demos,
+     * replaced trams…), never promo posts. On the very first run the
+     * backlog is silently marked as seen.
+     */
+    static void maybeCheckTraffic(Context c) {
+        try {
+            // Test seam: the JVM harness installs a canned feed to stay
+            // deterministic (and offline-proof); skip the RSS poll there.
+            if (sTestFeed != null) return;
+            if (!WidgetPrefs.getTrafficAlerts(c)) return;
+            long now = System.currentTimeMillis();
+            if (now - WidgetPrefs.getTrafficLastCheck(c) < TRAFFIC_CHECK_MS) return;
+            WidgetPrefs.setTrafficLastCheck(c, now);
+
+            List<TrafficFeed.Item> items = TrafficFeed.fetch(6000);
+            if (items.isEmpty()) return;
+
+            long lastTs = WidgetPrefs.getTrafficLastTs(c);
+            long newest = lastTs;
+            int notified = 0;
+            for (TrafficFeed.Item it : items) {
+                if (it.pubDateMs > newest) newest = it.pubDateMs;
+                if (it.pubDateMs <= lastTs || it.pubDateMs < now - TRAFFIC_FRESH_MS) continue;
+                if (!TrafficFeed.isDisruption(it)) continue;
+                if (notified++ >= TRAFFIC_MAX_NOTIFY) break;
+                Notifier.postTraffic(c, it.title, it.link);
+            }
+            WidgetPrefs.setTrafficLastTs(c, newest);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "traffic: " + t);
+        }
+    }
 
     /** The ids to operate on: the given subset, or every bound widget id. */
     private static int[] boundIds(Context context, AppWidgetManager awm, int[] widgetIds) {
