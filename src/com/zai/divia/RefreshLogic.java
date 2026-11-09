@@ -229,6 +229,9 @@ public final class RefreshLogic {
             WidgetPrefs.setLastOk(context, id, nowSec);
             cfg.lastOk = nowSec;
             safeRender(context, awm, id, cfg, cat, deps, nowSec * 1000L, false);
+            // v1.3.0: keep the recurring "time to leave" alarm aimed at
+            // the first departure after the rule's target time.
+            maybeArmRecurring(context, id, cfg, feed, cat, nowSec);
         }
         WidgetPrefs.setLastRefreshOk(context);
 
@@ -482,6 +485,42 @@ public final class RefreshLogic {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /**
+     * v1.3.0: (re)aims the recurring alarm of one widget from live data.
+     * Called after every successful refresh of a configured widget:
+     *  - no rule / rule day not enabled / already rang today -> no-op;
+     *  - otherwise the first departure at/after the rule's target time
+     *    becomes the aim; when it slips (delay) or vanishes (cancellation)
+     *    the next refresh re-aims, so the notification follows the bus.
+     * A wide departure horizon (12) lets evening rules arm early.
+     */
+    static void maybeArmRecurring(Context c, int id, WidgetPrefs.Config cfg,
+                                  byte[] feed, Catalog cat, long nowSec) {
+        try {
+            WidgetPrefs.Recurring r = WidgetPrefs.getRecurring(c, id);
+            if (r == null || !r.enabled) return;
+            if (!WidgetPrefs.dayEnabled(r.daysMask, nowSec * 1000L)) return;
+            if (ymdOf(nowSec * 1000L).equals(WidgetPrefs.getRecurFired(c, id))) return;
+
+            List<Departure> deps = DiviaApi.nextDepartures(feed, cat, cfg.stopId,
+                    cfg.lineMode ? cfg.routeId : null,
+                    cfg.lineMode ? cfg.dir : -1, 12, nowSec);
+            Departure first = NotifyScheduler.firstAfterTarget(deps, r.targetMin, nowSec);
+            if (first == null) return;
+
+            // Stable aim: don't churn the alarm when nothing moved.
+            WidgetPrefs.Alert armed = WidgetPrefs.getRecurArm(c, id);
+            if (armed != null && Math.abs(armed.timeSec - first.timeSec) <= 60L) return;
+
+            WidgetPrefs.Alert aim = new WidgetPrefs.Alert(first.tripId, first.timeSec,
+                    r.leadMin, first.lineShort, first.headsign);
+            WidgetPrefs.setRecurArm(c, id, aim);
+            NotifyScheduler.armRecurring(c, id, aim);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "recur-arm: " + t);
+        }
+    }
 
     /** Effective row count: the user override, or auto from the widget height. */
     static int effRows(WidgetPrefs.Config cfg) {

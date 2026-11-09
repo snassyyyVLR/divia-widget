@@ -11,9 +11,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
+import com.zai.divia.core.Departure;
+
+import java.util.Calendar;
+import java.util.List;
+
 /**
- * Arms / cancels / re-arms the "time to leave" alarm of one widget. The
- * alarm targets NotifyReceiver, which re-checks the trip against the live
+ * Arms / cancels / re-arms the "time to leave" alarms of one widget:
+ *  - the one-shot alert pinned from a departure row (v1.1.0),
+ *  - the recurring rule armed from every live refresh (v1.3.0).
+ *
+ * Both target NotifyReceiver, which re-checks the trip against the live
  * feed before notifying — so a slipping or cancelled bus produces an
  * honest "in 9 min" (or "passed/cancelled") notification instead of the
  * stale number the user pinned.
@@ -36,30 +44,71 @@ public final class NotifyScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
-    /** (Re)arms the alert of one widget from its stored prefs, or no-op. */
+    /** v1.3.0: distinct action + request code so the recurring alarm and
+     *  the one-shot alert of the same widget never collide. */
+    private static PendingIntent piRecurring(Context c, int widgetId) {
+        Intent i = new Intent(NotifyReceiver.ACTION_RECUR);
+        i.setClass(c, NotifyReceiver.class);
+        i.putExtra(EXTRA_WIDGET, widgetId);
+        return PendingIntent.getBroadcast(c, 400000 + widgetId, i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    /** (Re)arms the one-shot alert of one widget from its stored prefs, or no-op. */
     public static void schedule(Context c, int widgetId) {
         try {
             WidgetPrefs.Alert a = WidgetPrefs.getAlert(c, widgetId);
             if (a == null) return;
-            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
-            if (am == null) return;
-            am.cancel(pi(c, widgetId));
-
-            long at = (a.timeSec - a.leadMin * 60L) * 1000L;
-            long now = System.currentTimeMillis();
-            if (at < now - 60000L) return;          // lead time long gone
-            if (at < now) at = now + 2000L;         // inside the window: fire now-ish
-
-            PendingIntent p = pi(c, widgetId);
-            if (Build.VERSION.SDK_INT >= 31 && !canScheduleExact(am)) {
-                am.setWindow(AlarmManager.RTC_WAKEUP, at, 60000L, p);
-            } else if (Build.VERSION.SDK_INT >= 23) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p);
-            } else {
-                am.set(AlarmManager.RTC_WAKEUP, at, p);
-            }
+            setAlertAlarm(c, widgetId, a, false);
         } catch (Throwable t) {
             WidgetPrefs.setLastError(c, "notify-schedule: " + t);
+        }
+    }
+
+    /** (Re)arms the recurring alarm of one widget from its stored armed state (boot). */
+    public static void scheduleRecurring(Context c, int widgetId) {
+        try {
+            WidgetPrefs.Alert a = WidgetPrefs.getRecurArm(c, widgetId);
+            if (a == null) return;
+            setAlertAlarm(c, widgetId, a, true);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "recur-schedule: " + t);
+        }
+    }
+
+    /** v1.3.0: aims the recurring alarm of one widget at the given departure. */
+    static void armRecurring(Context c, int widgetId, WidgetPrefs.Alert a) {
+        setAlertAlarm(c, widgetId, a, true);
+    }
+
+    /** Cancels the recurring alarm and clears the armed state (the rule stays). */
+    public static void cancelRecurring(Context c, int widgetId) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.cancel(piRecurring(c, widgetId));
+        } catch (Throwable ignored) {
+        }
+        WidgetPrefs.clearRecurArm(c, widgetId);
+    }
+
+    private static void setAlertAlarm(Context c, int widgetId, WidgetPrefs.Alert a,
+                                      boolean recurring) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        PendingIntent p = recurring ? piRecurring(c, widgetId) : pi(c, widgetId);
+        am.cancel(p);
+
+        long at = (a.timeSec - a.leadMin * 60L) * 1000L;
+        long now = System.currentTimeMillis();
+        if (at < now - 60000L) return;          // lead time long gone
+        if (at < now) at = now + 2000L;         // inside the window: fire now-ish
+
+        if (Build.VERSION.SDK_INT >= 31 && !canScheduleExact(am)) {
+            am.setWindow(AlarmManager.RTC_WAKEUP, at, 60000L, p);
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p);
+        } else {
+            am.set(AlarmManager.RTC_WAKEUP, at, p);
         }
     }
 
@@ -71,7 +120,7 @@ public final class NotifyScheduler {
         }
     }
 
-    /** Cancels the alarm AND clears the stored alert. */
+    /** Cancels the alarm AND clears the stored one-shot alert. */
     public static void cancel(Context c, int widgetId) {
         try {
             AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
@@ -86,5 +135,35 @@ public final class NotifyScheduler {
         for (Integer id : WidgetPrefs.alertWidgetIds(c)) {
             schedule(c, id.intValue());
         }
+    }
+
+    /** Re-arms every recurring alarm (boot / app update). */
+    public static void rescheduleAllRecurring(Context c) {
+        for (Integer id : WidgetPrefs.recurringWidgetIds(c)) {
+            scheduleRecurring(c, id.intValue());
+        }
+    }
+
+    // ------------------------------------------------------------ matching
+
+    /** Minute of day (local) of the given epoch-ms timestamp. */
+    static int minuteOfDay(long ms) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(ms);
+        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+    }
+
+    /**
+     * v1.3.0: first upcoming departure at/after the rule's target minute of
+     * day. Departures after midnight belong to the previous service day and
+     * deliberately do not match an evening target (plain minute-of-day
+     * comparison, no wrap-around).
+     */
+    static Departure firstAfterTarget(List<Departure> deps, int targetMin, long nowSec) {
+        for (Departure d : deps) {
+            if (d.timeSec <= nowSec) continue;
+            if (minuteOfDay(d.timeSec * 1000L) >= targetMin) return d;
+        }
+        return null;
     }
 }

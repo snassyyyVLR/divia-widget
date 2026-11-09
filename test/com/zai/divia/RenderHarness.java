@@ -9,7 +9,9 @@ import android.widget.RemoteViews;
 import com.zai.divia.core.Catalog;
 import com.zai.divia.core.Departure;
 import com.zai.divia.core.DiviaApi;
+import com.zai.divia.core.MiniJson;
 import com.zai.divia.core.ProtoRt;
+import com.zai.divia.core.ReleaseCheck;
 import com.zai.divia.core.TrafficFeed;
 
 import java.io.FileInputStream;
@@ -18,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -47,6 +50,11 @@ public final class RenderHarness {
     static void check(boolean ok, String msg) {
         if (ok) { pass++; System.out.println("  PASS  " + msg); }
         else    { fail++; System.out.println("  FAIL  " + msg); }
+    }
+
+    /** Epoch seconds at h:m on the recurring-alert test day. */
+    static long at(long baseSec, int h, int m) {
+        return baseSec + h * 3600L + m * 60L;
     }
 
     public static void main(String[] args) throws Exception {
@@ -608,6 +616,30 @@ public final class RenderHarness {
                     "notifier: traffic tap carries the link");
         }
 
+        // v1.2.0: updater notifications (channel, id space, version text).
+        Notifier.postUpdateInstalled(ctx);
+        check(ctx.notificationManager.channels.contains("updates"),
+                "notifier: updates channel created");
+        check(ctx.notificationManager.posted.size() == 3,
+                "notifier: update-installed notification posted");
+        if (ctx.notificationManager.posted.size() == 3) {
+            Object[] ue = ctx.notificationManager.posted.get(2);
+            check(((Integer) ue[0]).intValue() == 600001,
+                    "notifier: update notification uses the fixed 600001 id");
+            android.app.Notification un = (android.app.Notification) ue[1];
+            check(un.text != null && un.text.contains("1.2.0"),
+                    "notifier: update-installed text carries the version");
+        }
+        Notifier.postUpdateFailed(ctx, "STATUS_FAILURE_STORAGE");
+        check(ctx.notificationManager.posted.size() == 4,
+                "notifier: update-failed notification posted");
+        if (ctx.notificationManager.posted.size() == 4) {
+            android.app.Notification uf =
+                    (android.app.Notification) ctx.notificationManager.posted.get(3)[1];
+            check(uf.text != null && uf.text.contains("STATUS_FAILURE_STORAGE"),
+                    "notifier: update-failed text carries the installer message");
+        }
+
         // ---------------------------------------------------------------- v1.1.0: alert scheduling
         System.out.println("[alert scheduling]");
         ctx.alarmManager.exactCalls.clear();
@@ -650,6 +682,276 @@ public final class RenderHarness {
         ctx.alarmManager.exactAllowed = true;
         WidgetPrefs.clearAlert(ctx, 60);
         WidgetPrefs.clearAlert(ctx, 61);
+
+        // ---------------------------------------------------------------- v1.3.0: recurring alerts
+        System.out.println("[recurring alerts]");
+        check(WidgetPrefs.getRecurring(ctx, 65) == null, "recur: no rule by default");
+        WidgetPrefs.Recurring rule = new WidgetPrefs.Recurring();
+        rule.leadMin = 5;
+        rule.targetMin = 8 * 60 + 5;
+        rule.daysMask = WidgetPrefs.Recurring.WEEKDAYS;
+        WidgetPrefs.setRecurring(ctx, 65, rule);
+        WidgetPrefs.Recurring ruleBack = WidgetPrefs.getRecurring(ctx, 65);
+        check(ruleBack != null && ruleBack.enabled && ruleBack.leadMin == 5 && ruleBack.targetMin == 485
+                        && ruleBack.daysMask == WidgetPrefs.Recurring.WEEKDAYS,
+                "recur: rule round-trips through prefs");
+        check(WidgetPrefs.recurringWidgetIds(ctx).contains(65),
+                "recur: recurringWidgetIds lists the rule");
+        // 2026-11-09 is a Monday, 2026-11-08 a Sunday.
+        java.util.Calendar mon = java.util.Calendar.getInstance();
+        mon.clear(); mon.set(2026, java.util.Calendar.NOVEMBER, 9, 8, 0);
+        java.util.Calendar sun = java.util.Calendar.getInstance();
+        sun.clear(); sun.set(2026, java.util.Calendar.NOVEMBER, 8, 8, 0);
+        check(WidgetPrefs.dayEnabled(WidgetPrefs.Recurring.WEEKDAYS, mon.getTimeInMillis())
+                        && !WidgetPrefs.dayEnabled(WidgetPrefs.Recurring.WEEKDAYS, sun.getTimeInMillis()),
+                "recur: weekday mask selects Mon but not Sun");
+        check(WidgetPrefs.dayEnabled(0x01, sun.getTimeInMillis())
+                        && !WidgetPrefs.dayEnabled(0x01, mon.getTimeInMillis()),
+                "recur: Sunday bit selects Sun but not Mon");
+
+        // firstAfterTarget on a synthetic departure list (2026-11-09, Monday).
+        java.util.Calendar day = java.util.Calendar.getInstance();
+        day.clear(); day.set(2026, java.util.Calendar.NOVEMBER, 9, 0, 0);
+        long baseSec = day.getTimeInMillis() / 1000L;
+        List<Departure> dl = new ArrayList<Departure>();
+        dl.add(new Departure("R", "T1", "Valmy", 0, at(baseSec, 7, 50), 0, "trip-750"));
+        dl.add(new Departure("R", "T1", "Valmy", 0, at(baseSec, 8, 12), 0, "trip-812"));
+        dl.add(new Departure("R", "T1", "Valmy", 0, at(baseSec, 8, 20), 240, "trip-820"));
+        dl.add(new Departure("R", "T1", "Valmy", 0, at(baseSec, 9, 5), 0, "trip-905"));
+        Departure f = NotifyScheduler.firstAfterTarget(dl, 485, at(baseSec, 7, 55));
+        check(f != null && f.timeSec == at(baseSec, 8, 12),
+                "recur: first departure at/after 08:05 is the 08:12");
+        f = NotifyScheduler.firstAfterTarget(dl, 495, at(baseSec, 7, 55));
+        check(f != null && f.timeSec == at(baseSec, 8, 20),
+                "recur: target 08:15 picks the 08:20");
+        check(NotifyScheduler.firstAfterTarget(dl, 600, at(baseSec, 7, 55)) == null,
+                "recur: target 10:00 finds nothing");
+        f = NotifyScheduler.firstAfterTarget(dl, 470, at(baseSec, 8, 0));
+        check(f != null && f.timeSec == at(baseSec, 8, 12),
+                "recur: past departures are skipped");
+        check(NotifyScheduler.firstAfterTarget(new ArrayList<Departure>(), 0, at(baseSec, 8, 0)) == null,
+                "recur: empty departure list -> no candidate");
+
+        // arming from a live refresh (widget 65 = whole-stop Valmy config).
+        // Deterministic: when departures exist, aim at the LAST departure of
+        // the 12-departure horizon, so the lead time is safely in the future
+        // whatever the time of day the harness runs (a target 5 minutes away
+        // would hit the "lead time long gone" skip — correct app behavior,
+        // bad test timing).
+        WidgetPrefs.Config cfg65 = new WidgetPrefs.Config();
+        cfg65.lineMode = false;
+        cfg65.stopId = valmyId;
+        WidgetPrefs.save(ctx, 65, cfg65);
+        List<Departure> horizon = DiviaApi.nextDepartures(feed, cat, valmyId, null, -1, 12, now);
+        if (!horizon.isEmpty()) {
+            rule.targetMin = NotifyScheduler.minuteOfDay(
+                    horizon.get(horizon.size() - 1).timeSec * 1000L);
+            WidgetPrefs.setRecurring(ctx, 65, rule);
+        }
+        ctx.alarmManager.exactCalls.clear();
+        ctx.alarmManager.windowCalls.clear();
+        RefreshLogic.maybeArmRecurring(ctx, 65, cfg65, feed, cat, now);
+        Departure first = NotifyScheduler.firstAfterTarget(horizon, rule.targetMin, now);
+        WidgetPrefs.Alert armed = WidgetPrefs.getRecurArm(ctx, 65);
+        check((first == null) == (armed == null),
+                "recur: arm matches the first candidate (" + horizon.size() + " departures in horizon)");
+        if (first != null && armed != null) {
+            check(armed.timeSec == first.timeSec && armed.leadMin == 5
+                            && first.lineShort.equals(armed.line),
+                    "recur: armed at the first departure with the rule's lead");
+            check(!ctx.alarmManager.exactCalls.isEmpty()
+                            || !ctx.alarmManager.windowCalls.isEmpty(),
+                    "recur: alarm armed by the refresh");
+            if (!ctx.alarmManager.exactCalls.isEmpty()) {
+                PendingIntent rpi = (PendingIntent) ctx.alarmManager.exactCalls.get(0)[2];
+                check("broadcast".equals(rpi.kind) && rpi.intent.cls == NotifyReceiver.class
+                                && NotifyReceiver.ACTION_RECUR.equals(rpi.intent.action),
+                        "recur: alarm targets NotifyReceiver with ACTION_RECUR");
+                check(rpi.intent.getIntExtra(NotifyScheduler.EXTRA_WIDGET, -1) == 65,
+                        "recur: alarm carries the widget id");
+            }
+            // stability: a second refresh with the same data must not churn.
+            int armedCount = ctx.alarmManager.exactCalls.size();
+            RefreshLogic.maybeArmRecurring(ctx, 65, cfg65, feed, cat, now);
+            check(ctx.alarmManager.exactCalls.size() == armedCount,
+                    "recur: stable aim is not re-armed");
+            // fired marker short-circuits (one notification per day).
+            WidgetPrefs.setRecurFired(ctx, 65, RefreshLogic.ymdOf(now * 1000L));
+            NotifyScheduler.cancelRecurring(ctx, 65);
+            ctx.alarmManager.exactCalls.clear();
+            RefreshLogic.maybeArmRecurring(ctx, 65, cfg65, feed, cat, now);
+            check(WidgetPrefs.getRecurArm(ctx, 65) == null
+                            && ctx.alarmManager.exactCalls.isEmpty(),
+                    "recur: already rang today -> no re-arm");
+            WidgetPrefs.setRecurFired(ctx, 65, "");
+        }
+        // disabled day (mask 0 -> never) -> no arm even with departures.
+        if (first != null) {
+            WidgetPrefs.Alert savedAim = armed;
+            rule.daysMask = 0;
+            WidgetPrefs.setRecurring(ctx, 65, rule);
+            NotifyScheduler.cancelRecurring(ctx, 65);
+            ctx.alarmManager.exactCalls.clear();
+            RefreshLogic.maybeArmRecurring(ctx, 65, cfg65, feed, cat, now);
+            check(WidgetPrefs.getRecurArm(ctx, 65) == null && ctx.alarmManager.exactCalls.isEmpty(),
+                    "recur: day not enabled -> no arm");
+            rule.daysMask = WidgetPrefs.Recurring.WEEKDAYS;
+            WidgetPrefs.setRecurring(ctx, 65, rule);
+            if (savedAim != null) WidgetPrefs.setRecurArm(ctx, 65, savedAim);
+        }
+
+        // receiver fire path: notification posted, arm cleared, rule kept.
+        WidgetPrefs.setRecurring(ctx, 66, rule);
+        WidgetPrefs.setRecurArm(ctx, 66, new WidgetPrefs.Alert("trip-zz",
+                System.currentTimeMillis() / 1000L + 300L, 5, "L5", "Université"));
+        WidgetPrefs.setRecurFired(ctx, 66, "");
+        int postedBefore = ctx.notificationManager.posted.size();
+        Intent recurFire = new Intent(NotifyReceiver.ACTION_RECUR);
+        recurFire.putExtra(NotifyScheduler.EXTRA_WIDGET, 66);
+        new NotifyReceiver().onReceive(ctx, recurFire);
+        long deadline = System.currentTimeMillis() + 5000L;
+        while (System.currentTimeMillis() < deadline
+                && ctx.notificationManager.posted.size() == postedBefore) {
+            Thread.sleep(50L);
+        }
+        check(ctx.notificationManager.posted.size() > postedBefore,
+                "recur: firing posts a notification");
+        check(WidgetPrefs.getRecurArm(ctx, 66) == null,
+                "recur: armed state cleared after fire");
+        check(WidgetPrefs.getRecurFired(ctx, 66).length() == 8,
+                "recur: fired marker stamped yyyymmdd");
+        check(WidgetPrefs.getRecurring(ctx, 66) != null,
+                "recur: the rule survives the fire");
+        // cancelRecurring clears the arm but keep-rule semantics come from clearRecurring.
+        NotifyScheduler.cancelRecurring(ctx, 66);
+        check(WidgetPrefs.getRecurArm(ctx, 66) == null, "recur: cancelRecurring clears the arm");
+        WidgetPrefs.clearRecurring(ctx, 66);
+        check(WidgetPrefs.getRecurring(ctx, 66) == null, "recur: clearRecurring removes the rule");
+        WidgetPrefs.delete(ctx, 65);
+        check(WidgetPrefs.getRecurring(ctx, 65) == null && WidgetPrefs.getRecurArm(ctx, 65) == null,
+                "recur: delete() wipes rule and arm");
+
+        // ---------------------------------------------------------------- v1.2.0: updater (MiniJson + ReleaseCheck)
+        System.out.println("[update checker]");
+        String gh = "{\"url\":\"https://api.github.com/repos/snassyyyVLR/divia-widget/releases/1\","
+                + "\"id\":12345,\"draft\":false,\"prerelease\":false,"
+                + "\"author\":{\"login\":\"Snassyyy\",\"id\":7,\"site_admin\":false},"
+                + "\"tag_name\":\"release-1.2.0\","
+                + "\"name\":\"Divia Widget caf\\u00e9 1.2.0\","
+                + "\"body\":\"## What's new\\n\\n- **In-app updater** \u2014 checks GitHub once a day\\n- `Fixes` here\\n\\n[Release notes](https://github.com/snassyyyVLR/divia-widget)\\n\\n![shot](https://example.com/shot.png)\\n\\n```\\nfixed code block\\n```\","
+                + "\"created_at\":\"2026-11-09T10:00:00Z\","
+                + "\"published_at\":\"2026-11-09T10:30:00Z\","
+                + "\"html_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/tag/release-1.2.0\","
+                + "\"assets\":["
+                + "{\"url\":\"https://api.github.com/repos/x/assets/1\",\"id\":1,"
+                + "\"name\":\"DiviaWidget-v1.2.0-src.zip\",\"size\":295804,"
+                + "\"browser_download_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/download/release-1.2.0/DiviaWidget-v1.2.0-src.zip\"},"
+                + "{\"url\":\"https://api.github.com/repos/x/assets/2\",\"id\":2,"
+                + "\"name\":\"DiviaWidget-debug.apk\",\"size\":228864,"
+                + "\"browser_download_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/download/release-1.2.0/DiviaWidget-debug.apk\"}]}";
+        byte[] ghBytes = gh.getBytes(StandardCharsets.UTF_8);
+
+        Object root = MiniJson.parse(gh);
+        check(root instanceof Map, "minijson: root is an object");
+        Map<?, ?> ghm = (Map<?, ?>) root;
+        check("release-1.2.0".equals(ghm.get("tag_name")), "minijson: tag_name string");
+        check(((Number) ghm.get("id")).longValue() == 12345, "minijson: integer number");
+        check(Boolean.FALSE == ghm.get("draft") && Boolean.FALSE == ghm.get("prerelease"),
+                "minijson: booleans parse");
+        check(ghm.get("author") instanceof Map
+                        && "Snassyyy".equals(((Map<?, ?>) ghm.get("author")).get("login")),
+                "minijson: nested object");
+        check(ghm.get("assets") instanceof List && ((List<?>) ghm.get("assets")).size() == 2,
+                "minijson: array of objects");
+        check("Divia Widget caf\u00e9 1.2.0".equals(ghm.get("name")),
+                "minijson: \\uXXXX escape decodes");
+        check("caf\u00e9".equals(MiniJson.parse("\"caf\\u00e9\"")),
+                "minijson: bare \\uXXXX string");
+        Object arr = MiniJson.parse("[1,2.5,{\"a\":[true,null]},\"x\\/y\"]");
+        check(arr instanceof List && ((List<?>) arr).size() == 4
+                        && ((List<?>) ((Map<?, ?>) ((List<?>) arr).get(2)).get("a")).get(1) == null
+                        && "x/y".equals(((List<?>) arr).get(3)),
+                "minijson: mixed array, escaped slash, null");
+        boolean badJsonRejected = false;
+        try { MiniJson.parse("{\"a\":1,}"); } catch (IllegalArgumentException e) {
+            badJsonRejected = true;
+        }
+        check(badJsonRejected, "minijson: malformed document rejected");
+        boolean deepJsonRejected = false;
+        StringBuilder deep = new StringBuilder("[");
+        for (int k = 0; k < 200; k++) deep.append('[');
+        deep.append(']');
+        try { MiniJson.parse(deep.toString()); } catch (IllegalArgumentException e) {
+            deepJsonRejected = true;
+        }
+        check(deepJsonRejected, "minijson: runaway nesting rejected");
+
+        ReleaseCheck.Release rel = ReleaseCheck.parse(ghBytes);
+        check("release-1.2.0".equals(rel.tag), "update: release tag");
+        check("1.2.0".equals(rel.versionString)
+                        && Arrays.equals(rel.version, new int[]{1, 2, 0}),
+                "update: version triple parsed");
+        check(rel.apkUrl.endsWith("DiviaWidget-debug.apk"),
+                "update: .apk asset picked over .zip");
+        check(rel.apkSize == 228864, "update: apk size read");
+        check(rel.pageUrl.startsWith("https://github.com/snassyyyVLR/divia-widget"),
+                "update: page url read");
+        check(rel.notes.contains("In-app updater") && rel.notes.contains("Release notes"),
+                "update: notes keep the text");
+        check(!rel.notes.contains("!") && !rel.notes.contains("](")
+                        && !rel.notes.contains("**") && !rel.notes.contains("##")
+                        && !rel.notes.contains("fixed code block"),
+                "update: markdown stripped from notes");
+        check(rel.isNewerThan("1.1.0") && rel.isNewerThan("1.1.9")
+                        && !rel.isNewerThan("1.2.0") && !rel.isNewerThan("1.2.1"),
+                "update: isNewerThan compares versions");
+
+        check(Arrays.equals(ReleaseCheck.parseVersion("release-1.1.0"), new int[]{1, 1, 0}),
+                "update: parseVersion release-1.1.0");
+        check(Arrays.equals(ReleaseCheck.parseVersion("v1.2"), new int[]{1, 2, 0}),
+                "update: parseVersion v1.2");
+        check(Arrays.equals(ReleaseCheck.parseVersion("1.2.3.4"), new int[]{1, 2, 3}),
+                "update: parseVersion 1.2.3.4");
+        check(ReleaseCheck.parseVersion("beta") == null
+                        && ReleaseCheck.parseVersion("") == null
+                        && ReleaseCheck.parseVersion(null) == null,
+                "update: unparsable tags rejected");
+        check(ReleaseCheck.isNewer(new int[]{1, 2, 0}, new int[]{1, 1, 9})
+                        && !ReleaseCheck.isNewer(new int[]{1, 1, 0}, new int[]{1, 1, 0})
+                        && ReleaseCheck.isNewer(new int[]{2, 0, 0}, new int[]{1, 99, 99})
+                        && ReleaseCheck.isNewer(new int[]{1, 10, 0}, new int[]{1, 9, 0}),
+                "update: numeric (not lexicographic) comparison");
+        StringBuilder longBody = new StringBuilder();
+        for (int k = 0; k < 400; k++) longBody.append("word ");
+        String capped = ReleaseCheck.cleanNotes(longBody.toString(), 700);
+        check(capped.length() <= 701 && capped.endsWith("\u2026"),
+                "update: notes capped with ellipsis");
+        check(ReleaseCheck.cleanNotes(null, 700).isEmpty()
+                        && ReleaseCheck.cleanNotes("", 700).isEmpty(),
+                "update: empty notes stay empty");
+
+        // The WidgetPrefs round-trip (cacheRelease -> getCachedRelease).
+        WidgetPrefs.cacheRelease(ctx, rel);
+        ReleaseCheck.Release cached = WidgetPrefs.getCachedRelease(ctx);
+        check(cached != null && "release-1.2.0".equals(cached.tag)
+                        && "1.2.0".equals(cached.versionString)
+                        && cached.apkUrl.endsWith("DiviaWidget-debug.apk")
+                        && cached.apkSize == 228864,
+                "update: release cache round-trips");
+        check(cached != null && cached.isNewerThan("1.1.0")
+                        && !cached.isNewerThan("1.2.0"),
+                "update: cached release still compares");
+        WidgetPrefs.clearUpdateCache(ctx);
+        check(WidgetPrefs.getCachedRelease(ctx) == null, "update: cache cleared");
+
+        // Live GitHub API (soft: skipped when offline / repo absent).
+        try {
+            ReleaseCheck.Release live = ReleaseCheck.check(ReleaseCheck.REPO, 8000);
+            check(live != null && live.tag != null && !live.tag.isEmpty(),
+                    "update: live GitHub release tag '" + (live == null ? "" : live.tag) + "'");
+        } catch (Exception e) {
+            System.out.println("  info  live GitHub check skipped (offline / no release): " + e);
+        }
 
         // ---------------------------------------------------------------- placeholder
         System.out.println("[placeholder]");

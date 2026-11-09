@@ -15,7 +15,7 @@ import java.util.Locale;
 /**
  * Minimal RSS reader for the DiviaMobilités info-trafic feed
  * (https://information.divia.fr/feed/ — a plain WordPress RSS 2.0 file).
- * Pure Java, hand-scanned (no XML parser dependency), so it runs both on
+ * Pure Java, scanned directly (no XML parser dependency), so it runs both on
  * Android and in the JVM test harness.
  */
 public final class TrafficFeed {

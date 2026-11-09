@@ -6,7 +6,7 @@
 package com.zai.divia.core;
 
 /**
- * Minimal hand-rolled parser for GTFS-Realtime trip-update feeds.
+ * Minimal from-scratch parser for GTFS-Realtime trip-update feeds.
  * Pure Java (no dependencies) so it can be unit-tested on a desktop JVM.
  *
  * Only the subset of the protobuf schema we need is decoded:

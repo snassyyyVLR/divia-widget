@@ -26,12 +26,16 @@ mkdir -p "$OUT"
 
 # Activity UIs are excluded: they use framework classes (AlertDialog,
 # Toast, PackageManager...) that the JVM stubs do not provide; the harness
-# exercises the render pipeline, not the screens.
+# exercises the render pipeline, not the screens. UpdateFlow / UpdateReceiver
+# drive Android's PackageInstaller and dialogs, so they are excluded too —
+# their pure logic (MiniJson, ReleaseCheck) IS in the harness.
 SRCS=$(find "$PROJ/src" -name '*.java' \
     ! -name 'ConfigActivity.java' \
     ! -name 'HomeActivity.java' \
     ! -name 'SettingsActivity.java' \
-    ! -name 'NotifyActivity.java')
+    ! -name 'NotifyActivity.java' \
+    ! -name 'UpdateFlow.java' \
+    ! -name 'UpdateReceiver.java')
 STUBS=$(find "$PROJ/test/stubs" -name '*.java')
 
 if [ -f "$ECJ" ]; then

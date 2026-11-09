@@ -24,19 +24,35 @@ BT="$SDK/build-tools/34.0.0"
 AJ="$SDK/platforms/android-34/android.jar"
 ECJ="$SDK/dl/ecj.jar"
 OUT="$PROJ/out"
-KS="$PROJ/debug.keystore"
-FINAL="$PROJ/DiviaWidget-debug.apk"
 STABLE="$PROJ/stable-ids.txt"
+
+# ---------------------------------------------------------------- signing
+# v1.3.0: a PRIVATE release key wins over the shared debug key. Drop
+# release.keystore next to build.sh (it is git-ignored) or point
+# DIVIA_KEYSTORE at it; DIVIA_KEYSTORE_PASS / DIVIA_KEYSTORE_ALIAS cover
+# non-default credentials. Read README "Signing" BEFORE switching keys on
+# a published app: Android only updates an install with the SAME signing
+# certificate, so a key change forces every user to uninstall first.
+if [ -n "${DIVIA_KEYSTORE:-}" ] && [ -f "${DIVIA_KEYSTORE}" ]; then
+    KS="${DIVIA_KEYSTORE}"
+elif [ -f "$PROJ/release.keystore" ]; then
+    KS="$PROJ/release.keystore"
+else
+    KS="$PROJ/debug.keystore"
+fi
+KSPASS="${DIVIA_KEYSTORE_PASS:-android}"
+FINAL="$PROJ/DiviaWidget-debug.apk"
 
 [ -x "$BT/aapt2" ] || { echo "aapt2 not found: $BT — set ANDROID_HOME"; exit 1; }
 [ -f "$AJ" ]       || { echo "android.jar not found: $AJ — install platform 34"; exit 1; }
 
 # Debug keystore (shared here so every rebuild installs over the previous
 # one). If you deleted it, a fresh one is generated — but then Android will
-# require uninstalling the previously installed build first.
-if [ ! -f "$KS" ]; then
+# require uninstalling the previously installed build first. A private
+# release.keystore is never auto-generated: create it yourself (see README).
+if [ ! -f "$PROJ/debug.keystore" ] && [ "$KS" = "$PROJ/debug.keystore" ]; then
     echo "[0/8] generating debug keystore"
-    keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
+    keytool -genkeypair -keystore "$PROJ/debug.keystore" -storepass android -keypass android \
         -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
         -keyalg RSA -keysize 2048 -validity 10000
 fi
@@ -59,8 +75,8 @@ echo "[2/8] aapt2 link (+assets, R.java, stable ids)"
     --java "$OUT/gen" \
     --min-sdk-version 21 \
     --target-sdk-version 34 \
-    --version-code 10 \
-    --version-name 1.1.0 \
+    --version-code 12 \
+    --version-name 1.3.0 \
     --auto-add-overlay \
     --stable-ids "$STABLE" \
     --emit-ids "$OUT/emitted-ids.txt" \
@@ -110,9 +126,12 @@ echo "[6/8] pack classes.dex"
 echo "[7/8] zipalign"
 "$BT/zipalign" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 
-echo "[8/8] apksigner sign"
-"$BT/apksigner" sign \
-    --ks "$KS" --ks-pass pass:android --key-pass pass:android \
+echo "[8/8] apksigner sign ($(basename "$KS"))"
+SIGN_ARGS=(--ks "$KS" --ks-pass pass:"$KSPASS")
+if [ -n "${DIVIA_KEYSTORE_ALIAS:-}" ]; then
+    SIGN_ARGS+=(--ks-key-alias "${DIVIA_KEYSTORE_ALIAS}")
+fi
+"$BT/apksigner" sign "${SIGN_ARGS[@]}" \
     --out "$FINAL" \
     "$OUT/aligned.apk"
 

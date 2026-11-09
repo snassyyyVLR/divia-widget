@@ -62,6 +62,11 @@ public class Context {
 
     public void startActivity(Intent i) { /* no-op on JVM */ }
 
+    /** Minimal PackageManager stub (updater notifications read versionName). */
+    public android.content.pm.PackageManager getPackageManager() {
+        return new android.content.pm.PackageManager();
+    }
+
     /** Recorded by the harness so it can assert broadcast targets. */
     public final java.util.List<Intent> sentBroadcasts = new java.util.ArrayList<Intent>();
 

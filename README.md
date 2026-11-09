@@ -2,20 +2,20 @@
 
 **Live bus & tram departures for Dijon, right on your home screen.**
 
-by **Snassyyy**
+by **Snassyyy** — <https://github.com/snassyyyVLR/divia-widget>
 
 ![widget preview](docs/widget-preview.png)
 
 A zero-dependency, zero-account Android home-screen widget showing the next
 departures for any Divia line or stop — powered by the official French
-open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics,
-no special permissions beyond the network: the whole app is a few dozen KB
-of hand-written Java and one hand-rolled GTFS-RT protobuf parser.
+open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics;
+the only permissions are the network, notifications and (for the self-
+updater) installing packages: the whole app is a few dozen KB of dependency-
+free Java, a purpose-built GTFS-RT protobuf parser and a small JSON scanner.
 
-Current release: **release-1.1.0** — version numbering now follows the
-public GitHub release line (the previous public drop was v2.1.1; the
-internal 2.x labels are retired). `versionCode` stays monotonic (10), so
-the APK installs over every earlier build.
+Current release: **release-1.3.0** — version numbering follows the public
+GitHub release line (previous public drop: release-1.2.0). `versionCode`
+stays monotonic (now 12), so the APK installs over every earlier build.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
@@ -36,15 +36,26 @@ the APK installs over every earlier build.
 - **"Time to leave" alerts (1.1.0)** — tap a departure row on the widget,
   pick a 3/5/10-min lead time, get a notification that re-checks the live
   feed before firing (a slipping bus yields an updated countdown).
+- **Recurring alerts (1.3.0)** — long-press a widget card → *Alerte
+  récurrente*: on the chosen days, the widget watches the live feed and
+  notifies N minutes before the first departure at/after your target time
+  (e.g. every weekday around 08:05 for the 08:12 T1). The aim re-evaluates
+  on every refresh, so a slipping bus shifts the alert; one notification
+  per rule per day.
 - **Info-trafic notifications (1.1.0)** — official disruption posts from
   information.divia.fr (strikes, demos, replaced trams), never promo.
 - **Battery-aware refresh (1.1.0)** — 5-minute cadence by day, 30 minutes
   during the night service gap, self-rescheduling alarms.
+- **In-app updater (1.2.0)** — checks this repo's GitHub Releases
+  (`snassyyyVLR/divia-widget`) once a day (plus a manual button in
+  Settings); a home-screen banner offers the new version, one tap downloads
+  the APK and hands it to Android's own installer. The repo slug lives in a
+  single constant: `REPO` in `src/com/zai/divia/core/ReleaseCheck.java`.
 - **5-minute auto-refresh + tap-to-refresh**, self-healing widgets, offline
   fallback with "last good data" rows.
 - **Clean companion app** — home screen listing your widgets, and a Settings
   screen with diagnostics (bound widget ids, launcher, last refresh, last
-  error), feed test, traffic-alerts toggle and repair actions.
+  error), feed test, traffic-alerts toggle, update check and repair actions.
 - **FR/EN, day/night themes.** Android 5.0+ (API 21), target 34.
 
 ## Reading the widget
@@ -116,20 +127,54 @@ The build is intentionally paranoid about two widget-specific traps:
   `<View>` divider).
 - **Stable resource ids** — after an in-place update, launchers re-apply
   RemoteViews cached from the *previous* APK with the old numeric ids
-  baked in. `stable-ids.txt` pins every resource id, and the build fails
-  if anything drifts.
+  baked in. `stable-ids.txt` pins every resource id (268 as of 1.3.0,
+  append-only), and the build fails if anything drifts. Each release's pin
+  set is verified resource-by-resource against the previously published
+  APK (`aapt2 dump resources` on both), so widgets survive the update
+  untouched — including the five-row ids in 1.2.0 and the updater ids in
+  1.3.0.
 
 `debug.keystore` ships with the repo so every rebuild installs over the
 previous one. It is a debug key — fine for personal sideloading, never
 for a store release; delete it and `build.sh` generates a fresh one (you
 will then need to uninstall the older build first).
 
+## Signing (read before wider distribution)
+
+Android only installs an update over an existing app when it is signed
+with the **same certificate** — and the in-app updater (1.2.0+) relies on
+exactly that. Consequences:
+
+- Today every public release is signed with the shared `debug.keystore`
+  from this repo. That is deliberate (rebuilds update in place), but the
+  key is public: anyone can build an APK that installs over a user's
+  copy. Acceptable for a personal sideload app; not for anything bigger.
+- **Before wider distribution, switch to a private release key.** Generate
+  one off-repo and never commit it (`.gitignore` already excludes
+  `release.keystore`):
+
+  ```bash
+  keytool -genkeypair -keystore release.keystore -alias divia \
+      -keyalg RSA -keysize 4096 -validity 10000
+  ```
+
+  Drop it next to `build.sh` (or set `DIVIA_KEYSTORE`, and optionally
+  `DIVIA_KEYSTORE_PASS` / `DIVIA_KEYSTORE_ALIAS`) and rebuild — the
+  release key wins over the debug key automatically. **Back it up**: a
+  lost key can never be recovered.
+- **Switching keys after users installed = forced uninstall for everyone.**
+  A differently-signed APK is rejected as an update (the auto-updater
+  would report a signature conflict), so decide *before* the next release
+  goes public, not after. Key rotation via `apksigner rotate` only works
+  on Android 9+ and still needs the old key for older devices — with
+  minSdk 21 there is no clean migration; pick the final key early.
+
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.1.0, API 21-34)
+AndroidManifest.xml     app manifest (version 1.3.0, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
-run-tests.sh            JVM test harness runner (800+ assertions)
+run-tests.sh            JVM test harness runner (1025 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
 debug.keystore          shared debug signing key
@@ -144,10 +189,22 @@ docs/                   preview image
 
 The core (`core/`) is pure Java with no Android imports, so the whole
 parsing/rendering pipeline runs on a desktop JVM — that is what
-`run-tests.sh` exercises (826 assertions): layout whitelist, full
+`run-tests.sh` exercises (1025 assertions; the live-feed sections vary
+slightly with what the network serves): layout whitelist, full
 render pipeline against the real catalog and live feed, badge colors,
 row counts, commute split, adapted-day chip, RSS parsing, notification
-building and alert scheduling.
+building, one-shot and recurring alert scheduling (arming, re-aiming,
+firing) and the GitHub-release parsing pipeline
+(MiniJson + version comparison + notes cleaning).
+
+## How this app was built
+
+**Disclosure: this project was developed with AI coding tools.** Large
+parts of the source code, the test harness, the build tooling and this
+documentation were produced with AI assistance, then reviewed, built,
+installed and tested on real devices by the author (Snassyyy). Nothing
+here is telemetry: the app makes no network call beyond the three listed
+in *Data & credits*, and ships no analytics.
 
 ## Data & credits
 
@@ -161,6 +218,8 @@ building and alert scheduling.
 - The bundled catalog covers the network until **2027-01-03**; after that
   date, regenerate it and rebuild.
 - This project is not affiliated with Divia, Keolis Dijon or
-  transport.data.gouv.fr. The app contacts exactly two hosts:
-  `proxy.transport.data.gouv.fr` (live departures) and
-  `information.divia.fr` (disruption announcements).
+  transport.data.gouv.fr. The app contacts exactly three sources:
+  `proxy.transport.data.gouv.fr` (live departures), `information.divia.fr`
+  (disruption announcements) and GitHub (`api.github.com` +
+  `github.com`/`objects.githubusercontent.com` for releases and the update
+  APK).

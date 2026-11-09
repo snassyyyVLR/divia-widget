@@ -51,6 +51,7 @@ public class SettingsActivity extends Activity {
     private Button refreshNowBtn;
     private Button testFeedBtn;
     private Button repairBtn;
+    private Button checkUpdateBtn;
     private TextView trafficValue;
 
     private final Handler handler = new Handler();
@@ -65,6 +66,7 @@ public class SettingsActivity extends Activity {
         refreshNowBtn = (Button) findViewById(R.id.btn_refresh_now);
         testFeedBtn = (Button) findViewById(R.id.btn_test_feed);
         repairBtn = (Button) findViewById(R.id.btn_repair_launcher);
+        checkUpdateBtn = (Button) findViewById(R.id.btn_check_update);
         trafficValue = (TextView) findViewById(R.id.traffic_value);
 
         findViewById(R.id.traffic_row).setOnClickListener(new View.OnClickListener() {
@@ -104,6 +106,14 @@ public class SettingsActivity extends Activity {
         repairBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 showRepairDialog();
+            }
+        });
+
+        // v1.2.0: manual check of the GitHub releases (the app also checks
+        // quietly once a day and shows a banner on the home screen).
+        checkUpdateBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                UpdateFlow.checkNow(SettingsActivity.this);
             }
         });
 
@@ -154,16 +164,17 @@ public class SettingsActivity extends Activity {
 
     // ------------------------------------------------------------------ rows
 
-    private void addRow(LinearLayout container, String label, String value) {
+    private View addRow(LinearLayout container, String label, String value) {
         View row = LayoutInflater.from(this)
                 .inflate(R.layout.row_setting, container, false);
         ((TextView) row.findViewById(R.id.setting_label)).setText(label);
         ((TextView) row.findViewById(R.id.setting_value)).setText(value);
         container.addView(row);
+        return row;
     }
 
-    private void addRowRes(LinearLayout container, int labelRes, String value) {
-        addRow(container, getString(labelRes), value);
+    private View addRowRes(LinearLayout container, int labelRes, String value) {
+        return addRow(container, getString(labelRes), value);
     }
 
     /** Full-width note row (small text, no label column). */
@@ -275,6 +286,23 @@ public class SettingsActivity extends Activity {
         aboutRows.removeAllViews();
         addRowRes(aboutRows, R.string.about_author, getString(R.string.about_author_value));
         addRowRes(aboutRows, R.string.about_license, getString(R.string.about_license_value));
+        // v1.2.0: the GitHub repo (open-source home + where the updater
+        // pulls releases from) — the row itself opens it in the browser.
+        addRowRes(aboutRows, R.string.about_repo,
+                getString(R.string.about_repo_value)).setOnClickListener(
+                new View.OnClickListener() {
+            public void onClick(View v) {
+                try {
+                    Intent open = new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://" + getString(R.string.about_repo_value)));
+                    open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(open);
+                } catch (Throwable t) {
+                    Toast.makeText(SettingsActivity.this, String.valueOf(t),
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+        });
         addRowRes(aboutRows, R.string.setting_source, getString(R.string.setting_source_value));
         addRowRes(aboutRows, R.string.setting_catalog_valid, getString(R.string.catalog_valid_value));
         // How lateness is shown (answers "is my bus late?" without opening

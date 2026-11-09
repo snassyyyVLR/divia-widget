@@ -19,13 +19,18 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.NumberPicker;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.zai.divia.core.Catalog;
+import com.zai.divia.core.ReleaseCheck;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -50,6 +55,7 @@ public class HomeActivity extends Activity {
     private ListView list;
     private LinearLayout emptyCard;
     private TextView statusText;
+    private TextView updateBanner;
     private final Handler handler = new Handler();
     private final List<Row> rows = new ArrayList<Row>();
     private final RowAdapter adapter = new RowAdapter();
@@ -69,6 +75,13 @@ public class HomeActivity extends Activity {
         list = (ListView) findViewById(R.id.list);
         emptyCard = (LinearLayout) findViewById(R.id.empty_card);
         statusText = (TextView) findViewById(R.id.status_text);
+        updateBanner = (TextView) findViewById(R.id.update_banner);
+
+        updateBanner.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                UpdateFlow.bannerTapped(HomeActivity.this);
+            }
+        });
 
         list.setAdapter(adapter);
         list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -110,6 +123,12 @@ public class HomeActivity extends Activity {
         RefreshLogic.kick(this);
         maybeAskNotifPermission();
 
+        // v1.2.0: quiet once-a-day check of the GitHub releases; when a
+        // newer version is cached, the banner appears above the list.
+        UpdateFlow.maybeCheckQuietly(this, new Runnable() {
+            public void run() { updateBannerUi(); }
+        });
+
         // Load the catalog off the main thread.
         new Thread(new Runnable() {
             public void run() {
@@ -131,6 +150,7 @@ public class HomeActivity extends Activity {
     protected void onStart() {
         super.onStart();
         updateStatus(); // covers coming back from Settings / picker
+        updateBannerUi(); // covers coming back from the unknown-sources toggle
         rebuild();
     }
 
@@ -196,6 +216,21 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /** v1.2.0: shows the update banner only when a cached release is newer
+     *  than the installed version (quiet check / manual check caches it). */
+    private void updateBannerUi() {
+        try {
+            ReleaseCheck.Release cached = WidgetPrefs.getCachedRelease(this);
+            boolean show = cached != null && UpdateFlow.isNewerThan(this, cached);
+            updateBanner.setVisibility(show ? View.VISIBLE : View.GONE);
+            if (show) {
+                updateBanner.setText(getString(R.string.update_banner_fmt,
+                        cached.versionString));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     // --------------------------------------------------------------- actions
 
     /** Opens the picker for an existing widget (edit flow). */
@@ -228,6 +263,7 @@ public class HomeActivity extends Activity {
         }
         if (cfg != null) {
             labels.add(getString(R.string.manage_rows));       actions.add(A_ROWS);
+            labels.add(getString(R.string.recur_menu));       actions.add(A_RECUR);
         }
         labels.add(getString(R.string.manage_forget));         actions.add(A_FORGET);
         labels.add(getString(R.string.cancel));                 actions.add(A_CANCEL);
@@ -249,6 +285,8 @@ public class HomeActivity extends Activity {
                                     rebuild();
                                 } else if (action == A_ROWS) {
                                     chooseRows(wid, cfg);
+                                } else if (action == A_RECUR) {
+                                    showRecurDialog(wid);
                                 } else if (action == A_FORGET) {
                                     forgetWidget(wid);
                                 }
@@ -258,7 +296,7 @@ public class HomeActivity extends Activity {
     }
 
     private static final int A_EDIT = 0, A_RETURN = 1, A_RETURN_OFF = 2,
-            A_ROWS = 3, A_FORGET = 4, A_CANCEL = 5;
+            A_ROWS = 3, A_RECUR = 4, A_FORGET = 5, A_CANCEL = 6;
 
     /** Opens the return-direction stop picker for an existing line widget. */
     private void pickReturnStop(int widgetId) {
@@ -301,6 +339,120 @@ public class HomeActivity extends Activity {
                 .show();
     }
 
+    // ------------------------------------------------------- recurring alerts
+
+    /**
+     * v1.3.0: recurring "time to leave" rule editor. The rule reuses the
+     * widget's own filter (its line+direction+stop, or its whole stop), so
+     * there is nothing to pick here beyond the target time, the lead time
+     * and the days it applies to.
+     */
+    private void showRecurDialog(final int wid) {
+        final WidgetPrefs.Recurring existing = WidgetPrefs.getRecurring(this, wid);
+
+        View v = LayoutInflater.from(this).inflate(R.layout.dialog_recur, null);
+
+        final NumberPicker npH = (NumberPicker) v.findViewById(R.id.np_hour);
+        final NumberPicker npM = (NumberPicker) v.findViewById(R.id.np_min);
+        npH.setMinValue(0);
+        npH.setMaxValue(23);
+        npM.setMinValue(0);
+        npM.setMaxValue(11);
+        npM.setDisplayedValues(new String[]{
+                "00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"});
+        int target = existing != null ? existing.targetMin : 8 * 60;
+        npH.setValue(target / 60);
+        npM.setValue((target % 60) / 5);
+
+        final RadioGroup leadGroup = (RadioGroup) v.findViewById(R.id.rg_lead);
+        int lead = existing != null ? existing.leadMin : 5;
+        ((RadioButton) v.findViewById(
+                lead == 3 ? R.id.rb_lead_3 : lead == 10 ? R.id.rb_lead_10 : R.id.rb_lead_5))
+                .setChecked(true);
+
+        // UI order Mon..Sun -> Calendar.DAY_OF_WEEK {2,3,4,5,6,7,1}.
+        final CheckBox[] dayBoxes = {
+                (CheckBox) v.findViewById(R.id.chk_mon),
+                (CheckBox) v.findViewById(R.id.chk_tue),
+                (CheckBox) v.findViewById(R.id.chk_wed),
+                (CheckBox) v.findViewById(R.id.chk_thu),
+                (CheckBox) v.findViewById(R.id.chk_fri),
+                (CheckBox) v.findViewById(R.id.chk_sat),
+                (CheckBox) v.findViewById(R.id.chk_sun)};
+        final int[] dayDows = {2, 3, 4, 5, 6, 7, 1};
+        int mask = existing != null ? existing.daysMask : WidgetPrefs.Recurring.WEEKDAYS;
+        for (int i = 0; i < 7; i++) {
+            dayBoxes[i].setChecked((mask & (1 << (dayDows[i] - 1))) != 0);
+        }
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(R.string.recur_title)
+                .setView(v)
+                .setPositiveButton(R.string.recur_save,
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int which) {
+                                int leadSel = 5;
+                                if (leadGroup.getCheckedRadioButtonId() == R.id.rb_lead_3) leadSel = 3;
+                                else if (leadGroup.getCheckedRadioButtonId() == R.id.rb_lead_10) leadSel = 10;
+                                int m = 0;
+                                for (int i = 0; i < 7; i++) {
+                                    if (dayBoxes[i].isChecked()) m |= 1 << (dayDows[i] - 1);
+                                }
+                                saveRecurring(wid, npH.getValue() * 60 + npM.getValue() * 5,
+                                        leadSel, m);
+                            }
+                        })
+                .setNegativeButton(R.string.cancel, null);
+        if (existing != null) {
+            b.setNeutralButton(R.string.recur_remove,
+                    new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface d, int which) {
+                            NotifyScheduler.cancelRecurring(HomeActivity.this, wid);
+                            WidgetPrefs.clearRecurring(HomeActivity.this, wid);
+                            RefreshLogic.kick(HomeActivity.this);
+                            Toast.makeText(HomeActivity.this,
+                                    R.string.recur_removed_toast, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+        }
+        b.show();
+    }
+
+    private void saveRecurring(int wid, int targetMin, int leadMin, int daysMask) {
+        if (daysMask == 0) {
+            Toast.makeText(this, R.string.recur_need_day, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        WidgetPrefs.Recurring r = new WidgetPrefs.Recurring();
+        r.leadMin = leadMin;
+        r.targetMin = targetMin;
+        r.daysMask = daysMask;
+        r.enabled = true;
+        WidgetPrefs.setRecurring(this, wid, r);
+        // Reset the day state so an edited rule can still ring later today.
+        WidgetPrefs.setRecurFired(this, wid, "");
+        NotifyScheduler.cancelRecurring(this, wid);
+        RefreshLogic.kick(this);   // arms from the next live refresh
+        Toast.makeText(this, R.string.recur_saved_toast, Toast.LENGTH_SHORT).show();
+        askRecurNotifPermission();
+    }
+
+    /** Android 13+: ask for POST_NOTIFICATIONS once, in context, when the
+     *  user first sets a recurring alert. */
+    private void askRecurNotifPermission() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 33
+                    && !WidgetPrefs.getNotifAsked(this)
+                    && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                WidgetPrefs.setNotifAsked(this, true);
+                requestPermissions(
+                        new String[]{"android.permission.POST_NOTIFICATIONS"}, 9);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** Forget = clear the stored config; visible widgets reset to setup. */
     private void forgetWidget(final int wid) {
         // Forget = clear the stored config. A visible
@@ -308,6 +460,7 @@ public class HomeActivity extends Activity {
         // placeholder; a phantom entry (ghost binding
         // with leftover prefs) simply disappears.
         NotifyScheduler.cancel(this, wid);
+        NotifyScheduler.cancelRecurring(this, wid);
         WidgetPrefs.delete(this, wid);
         synchronized (RefreshLogic.CACHE) {
             RefreshLogic.CACHE.remove(wid);

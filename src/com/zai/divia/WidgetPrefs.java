@@ -8,7 +8,10 @@ package com.zai.divia;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.zai.divia.core.ReleaseCheck;
+
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 
@@ -130,7 +133,9 @@ public final class WidgetPrefs {
         SharedPreferences.Editor e = prefs(c).edit();
         for (String k : new String[]{"mode", "route", "dir", "stop", "lastok",
                 "stop2", "dir2", "rows", "hdp",
-                "n_trip", "n_time", "n_lead", "n_line", "n_head"}) {
+                "n_trip", "n_time", "n_lead", "n_line", "n_head",
+                "r_on", "r_lead", "r_target", "r_days", "r_fired",
+                "rn_trip", "rn_time", "rn_lead", "rn_line", "rn_head"}) {
             e.remove(key(widgetId, k));
         }
         e.apply();
@@ -186,6 +191,123 @@ public final class WidgetPrefs {
         return out;
     }
 
+    // ------------------------------------------------------ recurring alerts
+
+    /**
+     * v1.3.0: a standing "time to leave" rule on one widget. The widget's
+     * own filter (line+direction+stop, or whole stop) defines which
+     * departures match; the rule adds a target time, a lead time and the
+     * days it applies to. Every live refresh re-aims the alarm at the
+     * first departure at/after the target time — a slipping bus shifts
+     * the notification instead of making it wrong.
+     */
+    public static final class Recurring {
+        /** Monday..Friday in DAY_OF_WEEK-bit form (bit 1<<(dow-1)). */
+        public static final int WEEKDAYS = 0x3E;
+
+        public boolean enabled = true;
+        public int leadMin = 5;
+        /** Minute of day of the first departure to watch (485 = 08:05). */
+        public int targetMin = 8 * 60;
+        /** One bit per Calendar.DAY_OF_WEEK: SUN=bit0 ... SAT=bit6. */
+        public int daysMask = WEEKDAYS;
+    }
+
+    /** True when the day of the given timestamp is enabled in the mask. */
+    public static boolean dayEnabled(int mask, long epochMs) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(epochMs);
+        return (mask & (1 << (cal.get(Calendar.DAY_OF_WEEK) - 1))) != 0;
+    }
+
+    /** Stores (or replaces) the recurring rule of one widget. */
+    public static void setRecurring(Context c, int widgetId, Recurring r) {
+        prefs(c).edit()
+                .putBoolean(key(widgetId, "r_on"), r.enabled)
+                .putInt(key(widgetId, "r_lead"), r.leadMin)
+                .putInt(key(widgetId, "r_target"), r.targetMin)
+                .putInt(key(widgetId, "r_days"), r.daysMask)
+                .apply();
+    }
+
+    /** The widget's recurring rule, or null when it has none. */
+    public static Recurring getRecurring(Context c, int widgetId) {
+        SharedPreferences p = prefs(c);
+        if (!p.getBoolean(key(widgetId, "r_on"), false)) return null;
+        Recurring r = new Recurring();
+        r.leadMin = p.getInt(key(widgetId, "r_lead"), 5);
+        r.targetMin = p.getInt(key(widgetId, "r_target"), 8 * 60);
+        r.daysMask = p.getInt(key(widgetId, "r_days"), Recurring.WEEKDAYS);
+        return r;
+    }
+
+    /** Removes the rule AND its armed state + fired marker. */
+    public static void clearRecurring(Context c, int widgetId) {
+        prefs(c).edit()
+                .remove(key(widgetId, "r_on")).remove(key(widgetId, "r_lead"))
+                .remove(key(widgetId, "r_target")).remove(key(widgetId, "r_days"))
+                .remove(key(widgetId, "r_fired"))
+                .remove(key(widgetId, "rn_trip")).remove(key(widgetId, "rn_time"))
+                .remove(key(widgetId, "rn_lead")).remove(key(widgetId, "rn_line"))
+                .remove(key(widgetId, "rn_head"))
+                .apply();
+    }
+
+    /** yyyymmdd the rule last rang on ("" = not today). */
+    public static String getRecurFired(Context c, int widgetId) {
+        return prefs(c).getString(key(widgetId, "r_fired"), "");
+    }
+
+    public static void setRecurFired(Context c, int widgetId, String ymd) {
+        prefs(c).edit().putString(key(widgetId, "r_fired"), ymd).apply();
+    }
+
+    /** The departure the recurring alarm currently aims at, or null. */
+    public static Alert getRecurArm(Context c, int widgetId) {
+        SharedPreferences p = prefs(c);
+        if (!p.contains(key(widgetId, "rn_time"))) return null;
+        return new Alert(
+                p.getString(key(widgetId, "rn_trip"), ""),
+                p.getLong(key(widgetId, "rn_time"), 0L),
+                p.getInt(key(widgetId, "rn_lead"), 5),
+                p.getString(key(widgetId, "rn_line"), ""),
+                p.getString(key(widgetId, "rn_head"), ""));
+    }
+
+    public static void setRecurArm(Context c, int widgetId, Alert a) {
+        prefs(c).edit()
+                .putString(key(widgetId, "rn_trip"), a.tripId)
+                .putLong(key(widgetId, "rn_time"), a.timeSec)
+                .putInt(key(widgetId, "rn_lead"), a.leadMin)
+                .putString(key(widgetId, "rn_line"), a.line)
+                .putString(key(widgetId, "rn_head"), a.headsign)
+                .apply();
+    }
+
+    public static void clearRecurArm(Context c, int widgetId) {
+        prefs(c).edit()
+                .remove(key(widgetId, "rn_trip")).remove(key(widgetId, "rn_time"))
+                .remove(key(widgetId, "rn_lead")).remove(key(widgetId, "rn_line"))
+                .remove(key(widgetId, "rn_head"))
+                .apply();
+    }
+
+    /** Every widget id with an enabled recurring rule (boot re-arm). */
+    public static List<Integer> recurringWidgetIds(Context c) {
+        List<Integer> out = new ArrayList<Integer>(4);
+        Map<String, ?> all = prefs(c).getAll();
+        for (Map.Entry<String, ?> e : all.entrySet()) {
+            String k = e.getKey();
+            if (k == null || !k.startsWith("w_") || !k.endsWith("_r_on")) continue;
+            if (!Boolean.TRUE.equals(e.getValue())) continue;
+            try {
+                out.add(Integer.valueOf(k.substring(2, k.length() - "_r_on".length())));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return out;
+    }
+
     // ------------------------------------------------------ trafic alerts
 
     public static boolean getTrafficAlerts(Context c) {
@@ -221,6 +343,56 @@ public final class WidgetPrefs {
 
     public static void setNotifAsked(Context c, boolean asked) {
         diagPrefs(c).edit().putBoolean("notif_asked", asked).apply();
+    }
+
+    // ------------------------------------------------------ update checker
+
+    /** Last GitHub release check time — throttles the quiet check to one per day. */
+    public static long getUpdateLastCheck(Context c) {
+        return diagPrefs(c).getLong("upd_check", 0L);
+    }
+
+    public static void setUpdateLastCheck(Context c, long ts) {
+        diagPrefs(c).edit().putLong("upd_check", ts).apply();
+    }
+
+    /** Caches a release KNOWN to be newer than the installed version. */
+    public static void cacheRelease(Context c, ReleaseCheck.Release rel) {
+        diagPrefs(c).edit()
+                .putString("upd_tag", rel.tag)
+                .putString("upd_name", rel.name)
+                .putString("upd_url", rel.pageUrl)
+                .putString("upd_apk", rel.apkUrl)
+                .putString("upd_apkname", rel.apkName)
+                .putLong("upd_size", rel.apkSize)
+                .putString("upd_notes",
+                        rel.notes.length() > 800 ? rel.notes.substring(0, 800) : rel.notes)
+                .putString("upd_ver", rel.versionString)
+                .apply();
+    }
+
+    /** The cached newer release (banner + one-tap install), or null. */
+    public static ReleaseCheck.Release getCachedRelease(Context c) {
+        SharedPreferences p = diagPrefs(c);
+        String tag = p.getString("upd_tag", null);
+        if (tag == null) return null;
+        return new ReleaseCheck.Release(
+                tag,
+                p.getString("upd_name", ""),
+                p.getString("upd_url", ""),
+                p.getString("upd_apk", ""),
+                p.getString("upd_apkname", ""),
+                p.getLong("upd_size", 0L),
+                p.getString("upd_notes", ""),
+                "");
+    }
+
+    public static void clearUpdateCache(Context c) {
+        diagPrefs(c).edit()
+                .remove("upd_tag").remove("upd_name").remove("upd_url")
+                .remove("upd_apk").remove("upd_apkname").remove("upd_size")
+                .remove("upd_notes").remove("upd_ver")
+                .apply();
     }
 
     private static String key(int id, String k) {

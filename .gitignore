@@ -4,6 +4,10 @@ out/
 *.idsig
 *.class
 
+# private signing key — never commit (see README "Signing")
+release.keystore
+release.keystore.*
+
 # IDE / OS
 .idea/
 *.iml

@@ -23,8 +23,10 @@ public class BootReceiver extends BroadcastReceiver {
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) return;
         AlarmScheduler.schedule(context);
         try {
-            // Re-arm every pending "time to leave" alert after the reboot.
+            // Re-arm every pending "time to leave" alert after the reboot:
+            // one-shot pins AND recurring rules (v1.3.0).
             NotifyScheduler.rescheduleAll(context);
+            NotifyScheduler.rescheduleAllRecurring(context);
         } catch (Throwable ignored) {
         }
         final PendingResult result = goAsync();

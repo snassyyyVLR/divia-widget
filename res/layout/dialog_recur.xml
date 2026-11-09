@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.3.0: recurring "time to leave" rule editor, shown by HomeActivity
+     inside an AlertDialog. App-process dialog: NumberPicker / RadioGroup /
+     CheckBox are NOT @RemoteView-safe and must never appear in the widget
+     layout (check_widget_layout.py only guards the widget layout, this one
+     is inflated in our own process). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="22dp"
+    android:paddingRight="22dp"
+    android:paddingTop="10dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/recur_hint"
+        android:textColor="@color/txt_sub"
+        android:textSize="12sp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="@string/recur_target_label"
+        android:textColor="@color/txt_clock"
+        android:textSize="12sp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal">
+
+        <NumberPicker
+            android:id="@+id/np_hour"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"/>
+
+        <NumberPicker
+            android:id="@+id/np_min"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"/>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/recur_lead_label"
+        android:textColor="@color/txt_clock"
+        android:textSize="12sp"/>
+
+    <RadioGroup
+        android:id="@+id/rg_lead"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/rb_lead_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/recur_lead_3"/>
+
+        <RadioButton
+            android:id="@+id/rb_lead_5"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/recur_lead_5"
+            android:checked="true"/>
+
+        <RadioButton
+            android:id="@+id/rb_lead_10"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/recur_lead_10"/>
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/recur_days_label"
+        android:textColor="@color/txt_clock"
+        android:textSize="12sp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <CheckBox
+            android:id="@+id/chk_mon"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:checked="true"
+            android:text="@string/day_mon"/>
+
+        <CheckBox
+            android:id="@+id/chk_tue"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:checked="true"
+            android:text="@string/day_tue"/>
+
+        <CheckBox
+            android:id="@+id/chk_wed"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:checked="true"
+            android:text="@string/day_wed"/>
+
+        <CheckBox
+            android:id="@+id/chk_thu"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:checked="true"
+            android:text="@string/day_thu"/>
+
+        <CheckBox
+            android:id="@+id/chk_fri"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:checked="true"
+            android:text="@string/day_fri"/>
+
+        <CheckBox
+            android:id="@+id/chk_sat"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="@string/day_sat"/>
+
+        <CheckBox
+            android:id="@+id/chk_sun"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="@string/day_sun"/>
+    </LinearLayout>
+</LinearLayout>
