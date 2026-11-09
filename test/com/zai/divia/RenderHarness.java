@@ -9,7 +9,9 @@ import android.widget.RemoteViews;
 import com.zai.divia.core.Catalog;
 import com.zai.divia.core.Departure;
 import com.zai.divia.core.DiviaApi;
+import com.zai.divia.core.MiniJson;
 import com.zai.divia.core.ProtoRt;
+import com.zai.divia.core.ReleaseCheck;
 import com.zai.divia.core.TrafficFeed;
 
 import java.io.FileInputStream;
@@ -18,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -608,6 +611,30 @@ public final class RenderHarness {
                     "notifier: traffic tap carries the link");
         }
 
+        // v1.2.0: updater notifications (channel, id space, version text).
+        Notifier.postUpdateInstalled(ctx);
+        check(ctx.notificationManager.channels.contains("updates"),
+                "notifier: updates channel created");
+        check(ctx.notificationManager.posted.size() == 3,
+                "notifier: update-installed notification posted");
+        if (ctx.notificationManager.posted.size() == 3) {
+            Object[] ue = ctx.notificationManager.posted.get(2);
+            check(((Integer) ue[0]).intValue() == 600001,
+                    "notifier: update notification uses the fixed 600001 id");
+            android.app.Notification un = (android.app.Notification) ue[1];
+            check(un.text != null && un.text.contains("1.2.0"),
+                    "notifier: update-installed text carries the version");
+        }
+        Notifier.postUpdateFailed(ctx, "STATUS_FAILURE_STORAGE");
+        check(ctx.notificationManager.posted.size() == 4,
+                "notifier: update-failed notification posted");
+        if (ctx.notificationManager.posted.size() == 4) {
+            android.app.Notification uf =
+                    (android.app.Notification) ctx.notificationManager.posted.get(3)[1];
+            check(uf.text != null && uf.text.contains("STATUS_FAILURE_STORAGE"),
+                    "notifier: update-failed text carries the installer message");
+        }
+
         // ---------------------------------------------------------------- v1.1.0: alert scheduling
         System.out.println("[alert scheduling]");
         ctx.alarmManager.exactCalls.clear();
@@ -650,6 +677,128 @@ public final class RenderHarness {
         ctx.alarmManager.exactAllowed = true;
         WidgetPrefs.clearAlert(ctx, 60);
         WidgetPrefs.clearAlert(ctx, 61);
+
+        // ---------------------------------------------------------------- v1.2.0: updater (MiniJson + ReleaseCheck)
+        System.out.println("[update checker]");
+        String gh = "{\"url\":\"https://api.github.com/repos/snassyyyVLR/divia-widget/releases/1\","
+                + "\"id\":12345,\"draft\":false,\"prerelease\":false,"
+                + "\"author\":{\"login\":\"Snassyyy\",\"id\":7,\"site_admin\":false},"
+                + "\"tag_name\":\"release-1.2.0\","
+                + "\"name\":\"Divia Widget caf\\u00e9 1.2.0\","
+                + "\"body\":\"## What's new\\n\\n- **In-app updater** \u2014 checks GitHub once a day\\n- `Fixes` here\\n\\n[Release notes](https://github.com/snassyyyVLR/divia-widget)\\n\\n![shot](https://example.com/shot.png)\\n\\n```\\nfixed code block\\n```\","
+                + "\"created_at\":\"2026-11-09T10:00:00Z\","
+                + "\"published_at\":\"2026-11-09T10:30:00Z\","
+                + "\"html_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/tag/release-1.2.0\","
+                + "\"assets\":["
+                + "{\"url\":\"https://api.github.com/repos/x/assets/1\",\"id\":1,"
+                + "\"name\":\"DiviaWidget-v1.2.0-src.zip\",\"size\":295804,"
+                + "\"browser_download_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/download/release-1.2.0/DiviaWidget-v1.2.0-src.zip\"},"
+                + "{\"url\":\"https://api.github.com/repos/x/assets/2\",\"id\":2,"
+                + "\"name\":\"DiviaWidget-debug.apk\",\"size\":228864,"
+                + "\"browser_download_url\":\"https://github.com/snassyyyVLR/divia-widget/releases/download/release-1.2.0/DiviaWidget-debug.apk\"}]}";
+        byte[] ghBytes = gh.getBytes(StandardCharsets.UTF_8);
+
+        Object root = MiniJson.parse(gh);
+        check(root instanceof Map, "minijson: root is an object");
+        Map<?, ?> ghm = (Map<?, ?>) root;
+        check("release-1.2.0".equals(ghm.get("tag_name")), "minijson: tag_name string");
+        check(((Number) ghm.get("id")).longValue() == 12345, "minijson: integer number");
+        check(Boolean.FALSE == ghm.get("draft") && Boolean.FALSE == ghm.get("prerelease"),
+                "minijson: booleans parse");
+        check(ghm.get("author") instanceof Map
+                        && "Snassyyy".equals(((Map<?, ?>) ghm.get("author")).get("login")),
+                "minijson: nested object");
+        check(ghm.get("assets") instanceof List && ((List<?>) ghm.get("assets")).size() == 2,
+                "minijson: array of objects");
+        check("Divia Widget caf\u00e9 1.2.0".equals(ghm.get("name")),
+                "minijson: \\uXXXX escape decodes");
+        check("caf\u00e9".equals(MiniJson.parse("\"caf\\u00e9\"")),
+                "minijson: bare \\uXXXX string");
+        Object arr = MiniJson.parse("[1,2.5,{\"a\":[true,null]},\"x\\/y\"]");
+        check(arr instanceof List && ((List<?>) arr).size() == 4
+                        && ((List<?>) ((Map<?, ?>) ((List<?>) arr).get(2)).get("a")).get(1) == null
+                        && "x/y".equals(((List<?>) arr).get(3)),
+                "minijson: mixed array, escaped slash, null");
+        boolean badJsonRejected = false;
+        try { MiniJson.parse("{\"a\":1,}"); } catch (IllegalArgumentException e) {
+            badJsonRejected = true;
+        }
+        check(badJsonRejected, "minijson: malformed document rejected");
+        boolean deepJsonRejected = false;
+        StringBuilder deep = new StringBuilder("[");
+        for (int k = 0; k < 200; k++) deep.append('[');
+        deep.append(']');
+        try { MiniJson.parse(deep.toString()); } catch (IllegalArgumentException e) {
+            deepJsonRejected = true;
+        }
+        check(deepJsonRejected, "minijson: runaway nesting rejected");
+
+        ReleaseCheck.Release rel = ReleaseCheck.parse(ghBytes);
+        check("release-1.2.0".equals(rel.tag), "update: release tag");
+        check("1.2.0".equals(rel.versionString)
+                        && Arrays.equals(rel.version, new int[]{1, 2, 0}),
+                "update: version triple parsed");
+        check(rel.apkUrl.endsWith("DiviaWidget-debug.apk"),
+                "update: .apk asset picked over .zip");
+        check(rel.apkSize == 228864, "update: apk size read");
+        check(rel.pageUrl.startsWith("https://github.com/snassyyyVLR/divia-widget"),
+                "update: page url read");
+        check(rel.notes.contains("In-app updater") && rel.notes.contains("Release notes"),
+                "update: notes keep the text");
+        check(!rel.notes.contains("!") && !rel.notes.contains("](")
+                        && !rel.notes.contains("**") && !rel.notes.contains("##")
+                        && !rel.notes.contains("fixed code block"),
+                "update: markdown stripped from notes");
+        check(rel.isNewerThan("1.1.0") && rel.isNewerThan("1.1.9")
+                        && !rel.isNewerThan("1.2.0") && !rel.isNewerThan("1.2.1"),
+                "update: isNewerThan compares versions");
+
+        check(Arrays.equals(ReleaseCheck.parseVersion("release-1.1.0"), new int[]{1, 1, 0}),
+                "update: parseVersion release-1.1.0");
+        check(Arrays.equals(ReleaseCheck.parseVersion("v1.2"), new int[]{1, 2, 0}),
+                "update: parseVersion v1.2");
+        check(Arrays.equals(ReleaseCheck.parseVersion("1.2.3.4"), new int[]{1, 2, 3}),
+                "update: parseVersion 1.2.3.4");
+        check(ReleaseCheck.parseVersion("beta") == null
+                        && ReleaseCheck.parseVersion("") == null
+                        && ReleaseCheck.parseVersion(null) == null,
+                "update: unparsable tags rejected");
+        check(ReleaseCheck.isNewer(new int[]{1, 2, 0}, new int[]{1, 1, 9})
+                        && !ReleaseCheck.isNewer(new int[]{1, 1, 0}, new int[]{1, 1, 0})
+                        && ReleaseCheck.isNewer(new int[]{2, 0, 0}, new int[]{1, 99, 99})
+                        && ReleaseCheck.isNewer(new int[]{1, 10, 0}, new int[]{1, 9, 0}),
+                "update: numeric (not lexicographic) comparison");
+        StringBuilder longBody = new StringBuilder();
+        for (int k = 0; k < 400; k++) longBody.append("word ");
+        String capped = ReleaseCheck.cleanNotes(longBody.toString(), 700);
+        check(capped.length() <= 701 && capped.endsWith("\u2026"),
+                "update: notes capped with ellipsis");
+        check(ReleaseCheck.cleanNotes(null, 700).isEmpty()
+                        && ReleaseCheck.cleanNotes("", 700).isEmpty(),
+                "update: empty notes stay empty");
+
+        // The WidgetPrefs round-trip (cacheRelease -> getCachedRelease).
+        WidgetPrefs.cacheRelease(ctx, rel);
+        ReleaseCheck.Release cached = WidgetPrefs.getCachedRelease(ctx);
+        check(cached != null && "release-1.2.0".equals(cached.tag)
+                        && "1.2.0".equals(cached.versionString)
+                        && cached.apkUrl.endsWith("DiviaWidget-debug.apk")
+                        && cached.apkSize == 228864,
+                "update: release cache round-trips");
+        check(cached != null && cached.isNewerThan("1.1.0")
+                        && !cached.isNewerThan("1.2.0"),
+                "update: cached release still compares");
+        WidgetPrefs.clearUpdateCache(ctx);
+        check(WidgetPrefs.getCachedRelease(ctx) == null, "update: cache cleared");
+
+        // Live GitHub API (soft: skipped when offline / repo absent).
+        try {
+            ReleaseCheck.Release live = ReleaseCheck.check(ReleaseCheck.REPO, 8000);
+            check(live != null && live.tag != null && !live.tag.isEmpty(),
+                    "update: live GitHub release tag '" + (live == null ? "" : live.tag) + "'");
+        } catch (Exception e) {
+            System.out.println("  info  live GitHub check skipped (offline / no release): " + e);
+        }
 
         // ---------------------------------------------------------------- placeholder
         System.out.println("[placeholder]");

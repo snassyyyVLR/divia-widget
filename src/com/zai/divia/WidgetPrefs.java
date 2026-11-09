@@ -8,6 +8,8 @@ package com.zai.divia;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.zai.divia.core.ReleaseCheck;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -221,6 +223,56 @@ public final class WidgetPrefs {
 
     public static void setNotifAsked(Context c, boolean asked) {
         diagPrefs(c).edit().putBoolean("notif_asked", asked).apply();
+    }
+
+    // ------------------------------------------------------ update checker
+
+    /** Last GitHub release check time — throttles the quiet check to one per day. */
+    public static long getUpdateLastCheck(Context c) {
+        return diagPrefs(c).getLong("upd_check", 0L);
+    }
+
+    public static void setUpdateLastCheck(Context c, long ts) {
+        diagPrefs(c).edit().putLong("upd_check", ts).apply();
+    }
+
+    /** Caches a release KNOWN to be newer than the installed version. */
+    public static void cacheRelease(Context c, ReleaseCheck.Release rel) {
+        diagPrefs(c).edit()
+                .putString("upd_tag", rel.tag)
+                .putString("upd_name", rel.name)
+                .putString("upd_url", rel.pageUrl)
+                .putString("upd_apk", rel.apkUrl)
+                .putString("upd_apkname", rel.apkName)
+                .putLong("upd_size", rel.apkSize)
+                .putString("upd_notes",
+                        rel.notes.length() > 800 ? rel.notes.substring(0, 800) : rel.notes)
+                .putString("upd_ver", rel.versionString)
+                .apply();
+    }
+
+    /** The cached newer release (banner + one-tap install), or null. */
+    public static ReleaseCheck.Release getCachedRelease(Context c) {
+        SharedPreferences p = diagPrefs(c);
+        String tag = p.getString("upd_tag", null);
+        if (tag == null) return null;
+        return new ReleaseCheck.Release(
+                tag,
+                p.getString("upd_name", ""),
+                p.getString("upd_url", ""),
+                p.getString("upd_apk", ""),
+                p.getString("upd_apkname", ""),
+                p.getLong("upd_size", 0L),
+                p.getString("upd_notes", ""),
+                "");
+    }
+
+    public static void clearUpdateCache(Context c) {
+        diagPrefs(c).edit()
+                .remove("upd_tag").remove("upd_name").remove("upd_url")
+                .remove("upd_apk").remove("upd_apkname").remove("upd_size")
+                .remove("upd_notes").remove("upd_ver")
+                .apply();
     }
 
     private static String key(int id, String k) {

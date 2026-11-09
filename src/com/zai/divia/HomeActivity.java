@@ -26,6 +26,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.zai.divia.core.Catalog;
+import com.zai.divia.core.ReleaseCheck;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -50,6 +51,7 @@ public class HomeActivity extends Activity {
     private ListView list;
     private LinearLayout emptyCard;
     private TextView statusText;
+    private TextView updateBanner;
     private final Handler handler = new Handler();
     private final List<Row> rows = new ArrayList<Row>();
     private final RowAdapter adapter = new RowAdapter();
@@ -69,6 +71,13 @@ public class HomeActivity extends Activity {
         list = (ListView) findViewById(R.id.list);
         emptyCard = (LinearLayout) findViewById(R.id.empty_card);
         statusText = (TextView) findViewById(R.id.status_text);
+        updateBanner = (TextView) findViewById(R.id.update_banner);
+
+        updateBanner.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                UpdateFlow.bannerTapped(HomeActivity.this);
+            }
+        });
 
         list.setAdapter(adapter);
         list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -110,6 +119,12 @@ public class HomeActivity extends Activity {
         RefreshLogic.kick(this);
         maybeAskNotifPermission();
 
+        // v1.2.0: quiet once-a-day check of the GitHub releases; when a
+        // newer version is cached, the banner appears above the list.
+        UpdateFlow.maybeCheckQuietly(this, new Runnable() {
+            public void run() { updateBannerUi(); }
+        });
+
         // Load the catalog off the main thread.
         new Thread(new Runnable() {
             public void run() {
@@ -131,6 +146,7 @@ public class HomeActivity extends Activity {
     protected void onStart() {
         super.onStart();
         updateStatus(); // covers coming back from Settings / picker
+        updateBannerUi(); // covers coming back from the unknown-sources toggle
         rebuild();
     }
 
@@ -191,6 +207,21 @@ public class HomeActivity extends Activity {
                         RefreshLogic.formatClock(this, lastOk)));
             } else {
                 statusText.setText(R.string.offline);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** v1.2.0: shows the update banner only when a cached release is newer
+     *  than the installed version (quiet check / manual check caches it). */
+    private void updateBannerUi() {
+        try {
+            ReleaseCheck.Release cached = WidgetPrefs.getCachedRelease(this);
+            boolean show = cached != null && UpdateFlow.isNewerThan(this, cached);
+            updateBanner.setVisibility(show ? View.VISIBLE : View.GONE);
+            if (show) {
+                updateBanner.setText(getString(R.string.update_banner_fmt,
+                        cached.versionString));
             }
         } catch (Throwable ignored) {
         }

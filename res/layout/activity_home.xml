@@ -38,6 +38,29 @@
             android:src="@drawable/ic_gear"/>
     </LinearLayout>
 
+    <!-- v1.2.0: update banner — visible only when a newer GitHub release is
+         cached; tapping opens the install flow. -->
+    <TextView
+        android:id="@+id/update_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/card"
+        android:layout_marginLeft="12dp"
+        android:layout_marginRight="12dp"
+        android:layout_marginTop="4dp"
+        android:paddingLeft="14dp"
+        android:paddingRight="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:textColor="@color/countdown"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="2"
+        android:ellipsize="end"/>
+
     <!-- Widget cards -->
     <ListView
         android:id="@+id/list"

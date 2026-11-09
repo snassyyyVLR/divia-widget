@@ -2,7 +2,7 @@
 
 **Live bus & tram departures for Dijon, right on your home screen.**
 
-by **Snassyyy**
+by **Snassyyy** — <https://github.com/snassyyyVLR/divia-widget>
 
 ![widget preview](docs/widget-preview.png)
 
@@ -10,12 +10,11 @@ A zero-dependency, zero-account Android home-screen widget showing the next
 departures for any Divia line or stop — powered by the official French
 open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics,
 no special permissions beyond the network: the whole app is a few dozen KB
-of Java and one hand-rolled GTFS-RT protobuf parser.
+of hand-written Java and one hand-rolled GTFS-RT protobuf parser.
 
-Current release: **release-1.1.0** — version numbering now follows the
-public GitHub release line (the previous public drop was v2.1.1; the
-internal 2.x labels are retired). `versionCode` stays monotonic (10), so
-the APK installs over every earlier build.
+Current release: **release-1.2.0** — version numbering follows the public
+GitHub release line (previous public drop: release-1.1.0). `versionCode`
+stays monotonic (now 11), so the APK installs over every earlier build.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
@@ -40,11 +39,16 @@ the APK installs over every earlier build.
   information.divia.fr (strikes, demos, replaced trams), never promo.
 - **Battery-aware refresh (1.1.0)** — 5-minute cadence by day, 30 minutes
   during the night service gap, self-rescheduling alarms.
+- **In-app updater (1.2.0)** — checks this repo's GitHub Releases
+  (`snassyyyVLR/divia-widget`) once a day (plus a manual button in
+  Settings); a home-screen banner offers the new version, one tap downloads
+  the APK and hands it to Android's own installer. The repo slug lives in a
+  single constant: `REPO` in `src/com/zai/divia/core/ReleaseCheck.java`.
 - **5-minute auto-refresh + tap-to-refresh**, self-healing widgets, offline
   fallback with "last good data" rows.
 - **Clean companion app** — home screen listing your widgets, and a Settings
   screen with diagnostics (bound widget ids, launcher, last refresh, last
-  error), feed test, traffic-alerts toggle and repair actions.
+  error), feed test, traffic-alerts toggle, update check and repair actions.
 - **FR/EN, day/night themes.** Android 5.0+ (API 21), target 34.
 
 ## Reading the widget
@@ -116,8 +120,10 @@ The build is intentionally paranoid about two widget-specific traps:
   `<View>` divider).
 - **Stable resource ids** — after an in-place update, launchers re-apply
   RemoteViews cached from the *previous* APK with the old numeric ids
-  baked in. `stable-ids.txt` pins every resource id, and the build fails
-  if anything drifts.
+  baked in. `stable-ids.txt` pins every resource id (233 as of 1.2.0,
+  append-only), and the build fails if anything drifts. The 1.2.0 pin set
+  was verified resource-by-resource against the published release-1.1.0
+  APK, so five-row widgets survive the update untouched.
 
 `debug.keystore` ships with the repo so every rebuild installs over the
 previous one. It is a debug key — fine for personal sideloading, never
@@ -127,9 +133,9 @@ will then need to uninstall the older build first).
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.1.0, API 21-34)
+AndroidManifest.xml     app manifest (version 1.2.0, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
-run-tests.sh            JVM test harness runner (800+ assertions)
+run-tests.sh            JVM test harness runner (870 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
 debug.keystore          shared debug signing key
@@ -144,10 +150,12 @@ docs/                   preview image
 
 The core (`core/`) is pure Java with no Android imports, so the whole
 parsing/rendering pipeline runs on a desktop JVM — that is what
-`run-tests.sh` exercises (826 assertions): layout whitelist, full
+`run-tests.sh` exercises (870 assertions; the live-feed sections vary
+slightly with what the network serves): layout whitelist, full
 render pipeline against the real catalog and live feed, badge colors,
 row counts, commute split, adapted-day chip, RSS parsing, notification
-building and alert scheduling.
+building, alert scheduling and the GitHub-release parsing pipeline
+(MiniJson + version comparison + notes cleaning).
 
 ## Data & credits
 
@@ -161,7 +169,8 @@ building and alert scheduling.
 - The bundled catalog covers the network until **2027-01-03**; after that
   date, regenerate it and rebuild.
 - This project is not affiliated with Divia, Keolis Dijon or
-  transport.data.gouv.fr. The app contacts exactly two hosts:
-  `proxy.transport.data.gouv.fr` (live departures) and
-  `information.divia.fr` (disruption announcements).
-- This project was made using diverse AI tools.
+  transport.data.gouv.fr. The app contacts exactly three sources:
+  `proxy.transport.data.gouv.fr` (live departures), `information.divia.fr`
+  (disruption announcements) and GitHub (`api.github.com` +
+  `github.com`/`objects.githubusercontent.com` for releases and the update
+  APK).

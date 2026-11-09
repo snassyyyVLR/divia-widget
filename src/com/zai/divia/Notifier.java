@@ -25,6 +25,7 @@ public final class Notifier {
 
     public static final String CHAN_DEPARTURES = "departures";
     public static final String CHAN_TRAFFIC = "trafic";
+    public static final String CHAN_UPDATES = "updates";
 
     private static final String ACTION_VIEW = "android.intent.action.VIEW";
 
@@ -46,6 +47,10 @@ public final class Notifier {
                     n.createNotificationChannel(new NotificationChannel(
                             CHAN_TRAFFIC,
                             c.getString(R.string.notif_chan_trafic),
+                            NotificationManager.IMPORTANCE_DEFAULT));
+                    n.createNotificationChannel(new NotificationChannel(
+                            CHAN_UPDATES,
+                            c.getString(R.string.notif_chan_updates),
                             NotificationManager.IMPORTANCE_DEFAULT));
                 }
             } catch (Throwable ignored) {
@@ -108,6 +113,45 @@ public final class Notifier {
                     c.getString(R.string.notif_traffic_title), title, pi));
         } catch (Throwable t) {
             WidgetPrefs.setLastError(c, "notify-trafic: " + t);
+        }
+    }
+
+    // ---------------------------------------------------------- updater
+
+    /** v1.2.0: self-update succeeded (the install was confirmed on screen). */
+    public static void postUpdateInstalled(Context c) {
+        try {
+            ensureChannels(c);
+            NotificationManager n = nm(c);
+            if (n == null) return;
+            String ver = "";
+            try {
+                ver = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+            } catch (Throwable ignored) {
+            }
+            n.notify(600001, build(c, CHAN_UPDATES,
+                    c.getString(R.string.notif_update_installed),
+                    c.getString(R.string.notif_update_installed_body_fmt, ver),
+                    openApp(c, 600002)));
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "notify-update: " + t);
+        }
+    }
+
+    /** v1.2.0: self-update failed — the status message says why. */
+    public static void postUpdateFailed(Context c, String detail) {
+        try {
+            ensureChannels(c);
+            NotificationManager n = nm(c);
+            if (n == null) return;
+            n.notify(600001, build(c, CHAN_UPDATES,
+                    c.getString(R.string.notif_update_failed),
+                    detail == null || detail.isEmpty()
+                            ? c.getString(R.string.notif_update_failed)
+                            : detail,
+                    openApp(c, 600002)));
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "notify-update-fail: " + t);
         }
     }
 

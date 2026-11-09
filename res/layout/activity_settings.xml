@@ -130,6 +130,18 @@
                     android:textAllCaps="false"
                     android:text="@string/repair_launcher_btn"/>
 
+                <!-- v1.2.0: in-app updater — manual check of GitHub releases -->
+                <Button
+                    android:id="@+id/btn_check_update"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_secondary"
+                    android:textColor="@color/txt_main"
+                    android:textSize="14sp"
+                    android:textAllCaps="false"
+                    android:text="@string/update_check"/>
+
                 <!-- v1.1.0: info-trafic notifications toggle (tappable row) -->
                 <LinearLayout
                     android:id="@+id/traffic_row"

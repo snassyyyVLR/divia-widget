@@ -103,6 +103,8 @@
     <string name="about_author_value">Snassyyy</string>
     <string name="about_license">Code license</string>
     <string name="about_license_value">MIT (open source)</string>
+    <string name="about_repo">Source code</string>
+    <string name="about_repo_value">github.com/snassyyyVLR/divia-widget</string>
 
     <!-- v1.1.0: adapted-timetable days -->
     <string name="adapted_tag">adapted timetable</string>
@@ -142,4 +144,27 @@
     <string name="traffic_on">On</string>
     <string name="traffic_off">Off</string>
     <string name="traffic_note">Notifications when the network is disrupted (strikes, demonstrations, replaced trams…) — official DiviaMobilités announcements only, never promo posts. Checked roughly every 30 minutes.</string>
+
+    <!-- v1.2.0: GitHub update checker -->
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date_fmt">You are up to date — version %s installed.</string>
+    <string name="update_available_title_fmt">Version %s available</string>
+    <string name="update_install">Install</string>
+    <string name="update_later">Later</string>
+    <string name="update_view_github">View on GitHub</string>
+    <string name="update_downloading">Downloading the update…</string>
+    <string name="update_confirm">Confirm the install on screen.</string>
+    <string name="update_dl_fail_fmt">Download failed: %s</string>
+    <string name="update_check_fail_fmt">Update check failed: %s</string>
+    <string name="update_repo_missing">No release found on GitHub — repository %s: check REPO in core/ReleaseCheck.java.</string>
+    <string name="update_no_apk">No APK is attached to this release — opening the GitHub page.</string>
+    <string name="update_unknown_sources">To install the update Android asks for a one-time allowance: open the setting, turn on “Install unknown apps” for Divia Widget, then come back and start the install again.</string>
+    <string name="update_open_setting">Open setting</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_banner_fmt">Version %s available — tap to install</string>
+    <string name="notif_chan_updates">Updates</string>
+    <string name="notif_update_installed">Update installed</string>
+    <string name="notif_update_installed_body_fmt">Divia Widget is up to date (%s)</string>
+    <string name="notif_update_failed">Update failed</string>
 </resources>

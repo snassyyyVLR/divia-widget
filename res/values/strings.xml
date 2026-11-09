@@ -103,6 +103,9 @@
     <string name="about_author_value">Snassyyy</string>
     <string name="about_license">Licence du code</string>
     <string name="about_license_value">MIT (open source)</string>
+    <!-- v1.2.0 : dépôt GitHub (lien posé par la mise à jour automatique) -->
+    <string name="about_repo">Code source</string>
+    <string name="about_repo_value">github.com/snassyyyVLR/divia-widget</string>
 
     <!-- v1.1.0 : jours à horaires adaptés -->
     <string name="adapted_tag">horaires adaptés</string>
@@ -142,4 +145,27 @@
     <string name="traffic_on">Activées</string>
     <string name="traffic_off">Désactivées</string>
     <string name="traffic_note">Notifications en cas de perturbation du réseau (grève, manifestation, tramways remplacés…) — uniquement les annonces officielles DiviaMobilités, jamais la communication promo. Vérification toutes les 30 minutes environ.</string>
+
+    <!-- v1.2.0 : mise à jour via GitHub -->
+    <string name="update_check">Vérifier les mises à jour</string>
+    <string name="update_checking">Vérification des mises à jour…</string>
+    <string name="update_up_to_date_fmt">Vous êtes à jour — version %s installée.</string>
+    <string name="update_available_title_fmt">Version %s disponible</string>
+    <string name="update_install">Installer</string>
+    <string name="update_later">Plus tard</string>
+    <string name="update_view_github">Voir sur GitHub</string>
+    <string name="update_downloading">Téléchargement de la mise à jour…</string>
+    <string name="update_confirm">Confirmez l\'installation à l\'écran.</string>
+    <string name="update_dl_fail_fmt">Téléchargement impossible : %s</string>
+    <string name="update_check_fail_fmt">Vérification impossible : %s</string>
+    <string name="update_repo_missing">Aucune release trouvée sur GitHub — dépôt %s : vérifiez REPO dans core/ReleaseCheck.java.</string>
+    <string name="update_no_apk">Aucun APK n\'est attaché à cette version — la page GitHub s\'ouvre.</string>
+    <string name="update_unknown_sources">Pour installer la mise à jour, Android demande une autorisation unique : ouvrez le réglage, activez « Autoriser l\'installation d\'applications inconnues » pour Divia Widget, puis revenez relancer l\'installation.</string>
+    <string name="update_open_setting">Ouvrir le réglage</string>
+    <string name="update_retry">Réessayer</string>
+    <string name="update_banner_fmt">Version %s disponible — touchez pour installer</string>
+    <string name="notif_chan_updates">Mises à jour</string>
+    <string name="notif_update_installed">Mise à jour installée</string>
+    <string name="notif_update_installed_body_fmt">Divia Widget est à jour (%s)</string>
+    <string name="notif_update_failed">Échec de la mise à jour</string>
 </resources>

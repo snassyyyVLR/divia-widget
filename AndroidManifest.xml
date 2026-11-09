@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zai.divia"
-    android:versionCode="10"
-    android:versionName="1.1.0">
+    android:versionCode="11"
+    android:versionName="1.2.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- v1.1.0: departure alerts + info-trafic alerts (runtime-granted on 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- v1.2.0: gates the in-app self-update on Android 8+ (the per-app
+         "install unknown apps" allowance, checked before committing an
+         install session). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- Needed to display the current launcher's package in diagnostics. -->
     <queries>
@@ -81,5 +86,8 @@
         <!-- v1.1.0: fires the "time to leave" alert of a widget, after
              re-checking the trip against the live feed. -->
         <receiver android:name=".NotifyReceiver" android:exported="false"/>
+        <!-- v1.2.0: receives the PackageInstaller session status callbacks
+             of the in-app updater (confirmation screen launch, result). -->
+        <receiver android:name=".UpdateReceiver" android:exported="false"/>
     </application>
 </manifest>
