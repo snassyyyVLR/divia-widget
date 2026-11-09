@@ -10,7 +10,7 @@ A zero-dependency, zero-account Android home-screen widget showing the next
 departures for any Divia line or stop — powered by the official French
 open-data realtime feed (`transport.data.gouv.fr`). No Gradle, no analytics,
 no special permissions beyond the network: the whole app is a few dozen KB
-of hand-written Java and one hand-rolled GTFS-RT protobuf parser.
+of Java and one hand-rolled GTFS-RT protobuf parser.
 
 Current release: **release-1.2.0** — version numbering follows the public
 GitHub release line (previous public drop: release-1.1.0). `versionCode`
@@ -174,3 +174,4 @@ building, alert scheduling and the GitHub-release parsing pipeline
   (disruption announcements) and GitHub (`api.github.com` +
   `github.com`/`objects.githubusercontent.com` for releases and the update
   APK).
+- This project was made using diverse AI tools.
