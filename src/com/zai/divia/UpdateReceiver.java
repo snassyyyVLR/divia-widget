@@ -26,11 +26,20 @@ public class UpdateReceiver extends BroadcastReceiver {
 
     public static final String ACTION_STATUS = "com.zai.divia.UPDATE_STATUS";
 
+    // PackageInstaller status codes as documented (and as every real device
+    // sends them): SUCCESS=0, PENDING_USER_ACTION=1, FAILURE family=-1..-7.
+    // MUST stay literals: the android.jar we compile against carries
+    // non-canonical values for these fields (PENDING=-1, FAILURE=1...), so
+    // referencing PackageInstaller.STATUS_* bakes the wrong numbers into
+    // the dex and the updater misreads every status broadcast — the exact
+    // "update-install(1): null" + "Failed to install" bug of v1.2.0/v1.3.0.
+    private static final int STATUS_SUCCESS = 0;
+    private static final int STATUS_PENDING_USER_ACTION = 1;
+
     @Override
     public void onReceive(Context context, Intent intent) {
-        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS,
-                PackageInstaller.STATUS_FAILURE);
-        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1);
+        if (status == STATUS_PENDING_USER_ACTION) {
             try {
                 Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
                 if (confirm != null) {
@@ -42,7 +51,7 @@ public class UpdateReceiver extends BroadcastReceiver {
             }
             return;
         }
-        if (status == PackageInstaller.STATUS_SUCCESS) {
+        if (status == STATUS_SUCCESS) {
             WidgetPrefs.clearUpdateCache(context);
             Notifier.postUpdateInstalled(context);
             return;

@@ -13,9 +13,11 @@ the only permissions are the network, notifications and (for the self-
 updater) installing packages: the whole app is a few dozen KB of dependency-
 free Java, a purpose-built GTFS-RT protobuf parser and a small JSON scanner.
 
-Current release: **release-1.3.0** — version numbering follows the public
-GitHub release line (previous public drop: release-1.2.0). `versionCode`
-stays monotonic (now 12), so the APK installs over every earlier build.
+Current release: **release-1.4.0** — version numbering follows the public
+GitHub release line (previous public drop: release-1.3.0). `versionCode`
+stays monotonic (now 14). 1.4.0 switches to the private release signing
+key (see *Signing* below): installing it over a 1.2.x/1.3.x build requires
+a one-time uninstall; from 1.4.0 on, updates install in place again.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
@@ -145,34 +147,30 @@ Android only installs an update over an existing app when it is signed
 with the **same certificate** — and the in-app updater (1.2.0+) relies on
 exactly that. Consequences:
 
-- Today every public release is signed with the shared `debug.keystore`
-  from this repo. That is deliberate (rebuilds update in place), but the
-  key is public: anyone can build an APK that installs over a user's
-  copy. Acceptable for a personal sideload app; not for anything bigger.
-- **Before wider distribution, switch to a private release key.** Generate
-  one off-repo and never commit it (`.gitignore` already excludes
-  `release.keystore`):
-
-  ```bash
-  keytool -genkeypair -keystore release.keystore -alias divia \
-      -keyalg RSA -keysize 4096 -validity 10000
-  ```
-
-  Drop it next to `build.sh` (or set `DIVIA_KEYSTORE`, and optionally
-  `DIVIA_KEYSTORE_PASS` / `DIVIA_KEYSTORE_ALIAS`) and rebuild — the
-  release key wins over the debug key automatically. **Back it up**: a
-  lost key can never be recovered.
-- **Switching keys after users installed = forced uninstall for everyone.**
-  A differently-signed APK is rejected as an update (the auto-updater
-  would report a signature conflict), so decide *before* the next release
-  goes public, not after. Key rotation via `apksigner rotate` only works
-  on Android 9+ and still needs the old key for older devices — with
-  minSdk 21 there is no clean migration; pick the final key early.
+- **Since 1.4.0 every public release is signed with a PRIVATE release
+  key** (kept off-repo). That switch was the one-time break: 1.4.0 must
+  be installed after uninstalling the debug-signed 1.2.x/1.3.x builds;
+  from 1.4.0 on, updates install in place again — and only the private
+  key can sign them, so nobody else can build an APK that installs over
+  a user's copy (the public debug key allowed exactly that).
+- Releases ≤ 1.3.0 were signed with the shared `debug.keystore` from
+  this repo. It stays for local development: a plain `bash build.sh`
+  uses it whenever no release key is configured.
+- To sign a release build: `DIVIA_KEYSTORE=/path/release.keystore
+  DIVIA_KEYSTORE_PASS=… DIVIA_KEYSTORE_ALIAS=… bash build.sh`. A
+  `release.keystore` dropped next to `build.sh` also wins automatically —
+  careful, that is a silent key switch. `.gitignore` already excludes
+  `release.keystore`; never commit it, and **back it up**: a lost key can
+  never be recovered and future updates become impossible.
+- **Switching keys after users installed = forced uninstall for everyone**
+  (happened once, at 1.4.0 — don't repeat it). Key rotation via
+  `apksigner rotate` only works on Android 9+ and still needs the old key
+  for older devices — with minSdk 21 there is no clean migration.
 
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.3.0, API 21-34)
+AndroidManifest.xml     app manifest (version 1.4.0, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
 run-tests.sh            JVM test harness runner (1025 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
