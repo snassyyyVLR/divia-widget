@@ -735,8 +735,273 @@ public final class RenderHarness {
             check(WidgetPrefs.layoutVariant(legacy) == 2,
                     "layoutVariant: explicit layout int wins over legacy boolean");
             legacy.layout = 3;
+            check(WidgetPrefs.layoutVariant(legacy) == 3,
+                    "layoutVariant: 1.7.0 large disposition (3) is valid");
+            legacy.layout = 4;
             check(WidgetPrefs.layoutVariant(legacy) == 1,
                     "layoutVariant: out-of-range int falls back to the legacy boolean");
+        }
+
+        // ---------------------------------------------------------------- v1.7.0
+        System.out.println("[v1.7.0 early + one-stop + large + nearby + catalog update]");
+
+        // ---- EARLY rendering: green countdown + "-N'" marker.
+        {
+            // -180 s and -7500 s are EARLY by >= 2 min; -60 s is not; a trip
+            // without a delay must never read as early.
+            byte[] earlyFeed = feed(
+                    trip("ea-a", "4-T1", 1, stu("4-1462", now + 300, Integer.valueOf(-180), true)),
+                    trip("ea-b", "4-T1", 1, stu("4-1462", now + 700, Integer.valueOf(-60), true)),
+                    trip("ea-c", "4-T1", 1, stu("4-1462", now + 1100, Integer.valueOf(-7500), true)),
+                    trip("ea-d", "4-T1", 1, stu("4-1462", now + 1500, null, true)));
+            List<Departure> eaDeps = DiviaApi.nextDepartures(earlyFeed, cat, "4-1462", "4-T1", 1, 4, now);
+            check(eaDeps.size() == 4, "early: synthetic feed yields 4 departures");
+            WidgetPrefs.Config cfgEa = new WidgetPrefs.Config();
+            cfgEa.lineMode = true;
+            cfgEa.routeId = "4-T1";
+            cfgEa.dir = 1;
+            cfgEa.stopId = "4-1462";
+            cfgEa.rows = 5;   // show all four departures
+            cfgEa.lastOk = now;
+            awm.clearUpdates();
+            RefreshLogic.render(ctx, awm, 45, cfgEa, cat, eaDeps, now * 1000L, false);
+            if (awm.updates.size() == 1) {
+                RemoteViews rvE = (RemoteViews) awm.updates.get(0)[1];
+                Map<Integer, Object> textsE = textsByView(rvE);
+                Map<Integer, Integer> colorsE = colorsByView(rvE);
+                Integer earlyDay = dayColors.get("early");
+                check(String.valueOf(textsE.get(R.id.clock0)).endsWith("\u00b7 -3\u2032"),
+                        "early row 0 (-3 min): marker on the clock: '"
+                                + textsE.get(R.id.clock0) + "'");
+                check(String.valueOf(textsE.get(R.id.clock2)).endsWith("\u00b7 -2h05"),
+                        "early row 2 (-7500 s): marker -2h05: '"
+                                + textsE.get(R.id.clock2) + "'");
+                check(!String.valueOf(textsE.get(R.id.clock1)).contains("-"),
+                        "early row 1 (-60 s): no marker (below threshold)");
+                check(!String.valueOf(textsE.get(R.id.clock3)).contains("-"),
+                        "early row 3 (no delay): unknown delay never reads as early");
+                check(colorsE.get(R.id.count0) != null && colorsE.get(R.id.count0).equals(earlyDay),
+                        "early row 0: countdown turns green (day)");
+                check(colorsE.get(R.id.count1) != null && colorsE.get(R.id.count1).equals(cdDay),
+                        "early row 1 (-60 s): countdown keeps the normal color");
+                check(colorsE.get(R.id.count3) != null && colorsE.get(R.id.count3).equals(cdDay),
+                        "early row 3 (no delay): countdown keeps the normal color");
+            } else {
+                check(false, "early: one update pushed");
+            }
+        }
+
+        // ---- ONE STOP AWAY: vehicle-positions feed -> row tag.
+        {
+            String[] t2Stops = cat.lineStopIds(t2Id, dirT2);
+            // A MIDDLE stop of the line (Valmy is the line's first stop in
+            // this direction, so it cannot have a "previous" one).
+            int userIdx = Math.min(5, t2Stops.length - 1);
+            check(userIdx > 0 && t2Stops.length > 2,
+                    "one-stop: T2 direction list is long enough");
+            String userStop = t2Stops[userIdx];
+            String prevStop = t2Stops[userIdx - 1];
+
+            // Two T2 departures at that stop; the first is served by a
+            // vehicle reported STOPPED_AT the previous stop, the second by
+            // one IN_TRANSIT_TO the stop BEFORE that (too far), plus a decoy
+            // already AT the user's stop.
+            byte[] osFeed = feed(
+                    trip("os-a", t2Id, dirT2, stu(userStop, 1230, Integer.valueOf(0), true)),
+                    trip("os-b", t2Id, dirT2, stu(userStop, 1500, Integer.valueOf(0), true)));
+            List<Departure> osDeps = DiviaApi.nextDepartures(osFeed, cat, userStop, t2Id, dirT2, 2, 60);
+            check(osDeps.size() == 2, "one-stop: feed yields 2 departures");
+            byte[] vpFeed = vfeed(
+                    veh("os-a", t2Id, dirT2, prevStop, 1),        // at the previous stop
+                    veh("os-b", t2Id, dirT2, t2Stops[userIdx - 2], 2),  // 2 back
+                    veh("os-x", t2Id, dirT2, userStop, 1));         // decoy: at the user's stop
+            java.util.Map<String, ProtoRt.VehiclePos> vps = ProtoRt.parseVehicles(vpFeed);
+            check(vps.size() == 3, "one-stop: 3 vehicles parsed, got " + vps.size());
+            WidgetPrefs.Config cfgOs = new WidgetPrefs.Config();
+            cfgOs.lineMode = true;
+            cfgOs.routeId = t2Id;
+            cfgOs.dir = dirT2;
+            cfgOs.stopId = userStop;
+            cfgOs.rows = 2;
+            cfgOs.lastOk = now;
+            RefreshLogic.annotateStopsAway(osDeps, cat, cfgOs, vps);
+            check(osDeps.get(0).stopsAway == 1,
+                    "one-stop: vehicle at the previous stop -> stopsAway 1");
+            check(osDeps.get(1).stopsAway == 0,
+                    "one-stop: vehicle two stops back -> no tag");
+            awm.clearUpdates();
+            RefreshLogic.render(ctx, awm, 46, cfgOs, cat, osDeps, 60 * 1000L, false);
+            if (awm.updates.size() == 1) {
+                Map<Integer, Object> textsO = textsByView((RemoteViews) awm.updates.get(0)[1]);
+                check(String.valueOf(textsO.get(R.id.dest0)).endsWith("\u00b7 "
+                                + fr.get("one_stop")),
+                        "one-stop: row 0 dest carries the tag: '" + textsO.get(R.id.dest0) + "'");
+                check(!String.valueOf(textsO.get(R.id.dest1)).contains(fr.get("one_stop")),
+                        "one-stop: row 1 dest carries no tag");
+            } else {
+                check(false, "one-stop: one update pushed");
+            }
+
+            // Whole-stop mode: siblings must resolve to the same list too.
+            WidgetPrefs.Config cfgSt = new WidgetPrefs.Config();
+            cfgSt.lineMode = false;
+            cfgSt.stopId = userStop;
+            cfgSt.rows = 2;
+            cfgSt.lastOk = now;
+            List<Departure> stDeps = DiviaApi.nextDepartures(osFeed, cat, userStop, null, -1, 2, 60);
+            RefreshLogic.annotateStopsAway(stDeps, cat, cfgSt, vps);
+            check(stDeps.get(0).stopsAway == 1,
+                    "one-stop: whole-stop mode resolves the previous stop too");
+
+            // INCOMING_AT the previous stop is NOT yet one stop away.
+            java.util.Map<String, ProtoRt.VehiclePos> vps2 =
+                    ProtoRt.parseVehicles(vfeed(veh("os-a", t2Id, dirT2, prevStop, 0)));
+            check(RefreshLogic.stopsAway(cat, osDeps.get(0), cfgOs,
+                    vps2.get("os-a")) == 0,
+                    "one-stop: INCOMING_AT the previous stop -> no tag yet");
+            // Garbage VP bytes must not throw.
+            check(ProtoRt.parseVehicles(new byte[]{0x0A, 0x05, 'h', 'e', 'l', 'l', 'o', 0x3F}).isEmpty(),
+                    "one-stop: malformed VP feed parses to nothing, no throw");
+        }
+
+        // ---- LARGE disposition renders with the big-text layout.
+        {
+            WidgetPrefs.Config cfgL = new WidgetPrefs.Config();
+            cfgL.lineMode = true;
+            cfgL.routeId = t2Id;
+            cfgL.dir = dirT2;
+            cfgL.stopId = valmyId;
+            cfgL.lastOk = now;
+            cfgL.layout = 3;
+            awm.clearUpdates();
+            List<Departure> twoL = new ArrayList<Departure>();
+            twoL.add(new Departure(t2Id, "T2", "Chen\u00f4ve Centre", dirT2,
+                    60 * 1000L + 300, 0, "lg-a"));
+            twoL.add(new Departure(t2Id, "T2", "Chen\u00f4ve Centre", dirT2,
+                    60 * 1000L + 900, 0, "lg-b"));
+            RefreshLogic.render(ctx, awm, 47, cfgL, cat, twoL, 60 * 1000L, false);
+            check(awm.updates.size() == 1, "large: one update pushed");
+            if (awm.updates.size() == 1) {
+                RemoteViews rvL = (RemoteViews) awm.updates.get(0)[1];
+                check(rvL.layoutId == R.layout.widget_divia_large,
+                        "large: disposition 3 uses widget_divia_large.xml");
+                Map<Integer, Object> textsL = textsByView(rvL);
+                check(textsL.containsKey(R.id.line_dest),
+                        "large: pushes the subtitle like the detailed layout");
+                check(textsL.containsKey(R.id.clock0),
+                        "large: pushes the clock like the detailed layout");
+            }
+            // previewViews: sample-filled previews for the disposition picker.
+            RemoteViews pv = RefreshLogic.previewViews(ctx, cat, RefreshLogic.LAYOUT_LARGE);
+            check(pv.layoutId == R.layout.widget_divia_large,
+                    "previews: large preview inflates the large layout");
+            RemoteViews pvM = RefreshLogic.previewViews(ctx, cat, RefreshLogic.LAYOUT_MODERN);
+            check(pvM.layoutId == R.layout.widget_divia_modern,
+                    "previews: modern preview inflates the modern layout");
+        }
+
+        // ---- NEARBY: catalog coordinates + haversine.
+        {
+            check(!cat.stopPos.isEmpty(),
+                    "nearby: catalog carries P coordinate records (got " + cat.stopPos.size() + ")");
+            check(Catalog.distM(47.32, 5.04, 47.32, 5.04) == 0,
+                    "nearby: distance to self is 0");
+            // ~1 degree of latitude is ~111 km.
+            int oneDeg = Catalog.distM(47.0, 5.0, 48.0, 5.0);
+            check(oneDeg > 110000 && oneDeg < 112500,
+                    "nearby: 1 degree of latitude ~= 111 km, got " + oneDeg);
+            // Dijon city center: the nearest stop must be within 600 m.
+            List<Catalog.NearStop> near = cat.nearestStops(47.3220, 5.0415, 20);
+            check(!near.isEmpty(), "nearby: nearestStops returns stops");
+            if (!near.isEmpty()) {
+                check(near.get(0).meters < 600,
+                        "nearby: closest stop to downtown Dijon < 600 m, got "
+                                + near.get(0).meters + " (" + near.get(0).name + ")");
+                for (int i = 1; i < near.size(); i++) {
+                    check(near.get(i).meters >= near.get(i - 1).meters,
+                            "nearby: sorted by distance at " + i);
+                }
+            }
+        }
+
+        // ---- TRAFFIC per-line filter.
+        {
+            java.util.ArrayList<String> shorts = new java.util.ArrayList<String>();
+            for (Catalog.Route r : cat.routes.values()) shorts.add(r.shortName);
+            // Real-path items: parse them out of a small RSS like on device.
+            String trafficRss = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel>"
+                    + "<item><title><![CDATA[Perturbation ligne T1]]></title>"
+                    + "<link>l1</link><guid>g1</guid><category><![CDATA[T1]]></category>"
+                    + "<pubDate>Mon, 10 Nov 2026 08:00:00 +0000</pubDate></item>"
+                    + "<item><title><![CDATA[Travaux L5 Valmy]]></title>"
+                    + "<link>l2</link><guid>g2</guid><category><![CDATA[L5]]></category>"
+                    + "<pubDate>Mon, 10 Nov 2026 08:05:00 +0000</pubDate></item>"
+                    + "<item><title><![CDATA[Gr\u00e8ve g\u00e9n\u00e9rale du r\u00e9seau]]></title>"
+                    + "<link>l3</link><guid>g3</guid><category></category>"
+                    + "<pubDate>Mon, 10 Nov 2026 08:10:00 +0000</pubDate></item>"
+                    + "<item><title><![CDATA[D\u00e9viation T10]]></title>"
+                    + "<link>l4</link><guid>g4</guid><category></category>"
+                    + "<pubDate>Mon, 10 Nov 2026 08:15:00 +0000</pubDate></item>"
+                    + "</channel></rss>";
+            List<TrafficFeed.Item> items = TrafficFeed.parse(
+                    trafficRss.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            check(items.size() == 4, "traffic: 4 items parsed, got " + items.size());
+            TrafficFeed.Item t1Post = items.get(0);
+            TrafficFeed.Item l5Post = items.get(1);
+            TrafficFeed.Item netPost = items.get(2);
+            TrafficFeed.Item t10Post = items.get(3);
+            java.util.Set<String> mentioned = TrafficFeed.linesMentioned(t1Post, shorts);
+            check(mentioned.contains("T1"), "traffic: 'ligne T1' mentions T1");
+            check(!mentioned.contains("T2"), "traffic: 'ligne T1' does not mention T2");
+            java.util.Set<String> userT2 = new java.util.HashSet<String>(
+                    java.util.Arrays.asList("T2", "L3"));
+            check(!TrafficFeed.concernsUser(t1Post, userT2, shorts),
+                    "traffic: T1 post does not concern a T2/L3 rider");
+            check(!TrafficFeed.concernsUser(l5Post, userT2, shorts),
+                    "traffic: L5 post does not concern a T2 rider");
+            check(TrafficFeed.concernsUser(netPost, userT2, shorts),
+                    "traffic: network-wide post concerns everyone");
+            // "T10" must not match T1; "ligne 50" must not match 5.
+            check(!TrafficFeed.linesMentioned(t10Post, shorts).contains("T1"),
+                    "traffic: 'T10' is not a mention of T1");
+            // A rider of the mentioned line IS concerned.
+            java.util.Set<String> userT1 = new java.util.HashSet<String>(
+                    java.util.Arrays.asList("T1"));
+            check(TrafficFeed.concernsUser(t1Post, userT1, shorts),
+                    "traffic: T1 post concerns a T1 rider");
+        }
+
+        // ---- CATALOG runtime update: find + validate.
+        {
+            String listJson = "[{\"tag_name\":\"timetable\",\"assets\":["
+                    + "{\"name\":\"catalog.gz\",\"browser_download_url\":\"https://x/cat.gz\","
+                    + "\"updated_at\":\"2026-11-10T06:00:00Z\",\"size\":100}]},"
+                    + "{\"tag_name\":\"release-1.6.2\",\"assets\":["
+                    + "{\"name\":\"DiviaWidget-release-1.6.2.apk\",\"browser_download_url\":\"https://x/a.apk\","
+                    + "\"updated_at\":\"2026-11-09T06:00:00Z\",\"size\":200}]}]";
+            com.zai.divia.core.CatalogUpdate.Candidate cand =
+                    com.zai.divia.core.CatalogUpdate.findCatalog(
+                            listJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            check(cand != null && "https://x/cat.gz".equals(cand.url),
+                    "catalog-update: finds the catalog.gz asset");
+            check(cand != null && "2026-11-10T06:00:00Z".equals(cand.stamp),
+                    "catalog-update: carries the asset stamp");
+            check(com.zai.divia.core.CatalogUpdate.findCatalog(
+                            "not json at all".getBytes(java.nio.charset.StandardCharsets.UTF_8)) == null,
+                    "catalog-update: bad json -> no candidate");
+
+            // The REAL bundled catalog validates against its own validUntil.
+            byte[] real = java.nio.file.Files.readAllBytes(
+                    java.nio.file.Paths.get(PROJ + "/assets/catalog.gz"));
+            check(com.zai.divia.core.CatalogUpdate.validate(real, cat.validUntil),
+                    "catalog-update: the real catalog validates against itself");
+            check(!com.zai.divia.core.CatalogUpdate.validate(
+                            "garbage".getBytes(java.nio.charset.StandardCharsets.UTF_8), ""),
+                    "catalog-update: garbage bytes rejected");
+            // A valid catalog that covers LESS than the minimum is a downgrade.
+            String later = String.valueOf(Long.parseLong(cat.validUntil) + 1);
+            check(!com.zai.divia.core.CatalogUpdate.validate(real, later),
+                    "catalog-update: earlier coverage than the minimum is rejected");
         }
 
         // v1.5.0: catalog expiry notification.
@@ -1695,6 +1960,29 @@ public final class RenderHarness {
         Pb ent = new Pb();
         ent.bytes(3, tu.build());
         return ent.build();
+    }
+
+    /** v1.7.0: one VehiclePosition — FeedEntity{vehicle=4}. */
+    static byte[] veh(String tripId, String routeId, int dir, String stopId, int status) {
+        Pb td = new Pb();
+        td.str(1, tripId);
+        td.str(5, routeId);
+        td.vint(6, dir);
+        Pb vp = new Pb();
+        vp.bytes(1, td.build());
+        vp.vint(4, status);   // current_status
+        vp.vint(5, 1794316135);  // timestamp
+        vp.str(7, stopId);
+        Pb ent = new Pb();
+        ent.bytes(4, vp.build());
+        return ent.build();
+    }
+
+    /** v1.7.0: a vehicle-positions FeedMessage. */
+    static byte[] vfeed(byte[]... entities) {
+        Pb msg = new Pb();
+        for (byte[] e : entities) msg.bytes(2, e);
+        return msg.build();
     }
 
     static byte[] feed(byte[]... entities) {

@@ -26,6 +26,9 @@ import java.util.zip.GZIPInputStream;
  * Format (one record per line, fields separated by '|'):
  *   L|route_id|short_name|long_name|route_type|color_hex
  *   S|stop_id|stop_name
+ *   P|stop_id|lat|lon                (v1.7.0: stop coordinates for the
+ *                                     "nearby stops" picker; absent from
+ *                                     older catalogs)
  *   T|trip_id|route_id|direction|headsign
  *   D|route_id|direction|stop_id,stop_id,...
  *   B|route_id|direction|direction_label
@@ -70,6 +73,9 @@ public final class Catalog {
     /** v1.5.0: last service date this catalog covers ("" when the record is absent). */
     public String validUntil = "";
 
+    /** v1.7.0: stop_id -> {lat, lon} radians (P records; empty on old catalogs). */
+    public final HashMap<String, double[]> stopPos = new HashMap<String, double[]>(1300);
+
     /** v1.5.0: (routeId|dir|stopId) -> last departure seconds-of-day. */
     private final HashMap<String, Integer> lastDep = new HashMap<String, Integer>(2100);
 
@@ -94,6 +100,19 @@ public final class Catalog {
                 case 'S': {
                     String[] p = split(line, 3);
                     stopNames.put(p[1], p[2]);
+                    break;
+                }
+                case 'P': {
+                    // v1.7.0: coordinates, stored in radians for the
+                    // haversine below. A malformed line is skipped, not
+                    // fatal — the nearby picker just loses that stop.
+                    try {
+                        String[] p = split(line, 4);
+                        stopPos.put(p[1], new double[]{
+                                Math.toRadians(Double.parseDouble(p[2])),
+                                Math.toRadians(Double.parseDouble(p[3]))});
+                    } catch (NumberFormatException ignored) {
+                    }
                     break;
                 }
                 case 'T': {
@@ -319,5 +338,71 @@ public final class Catalog {
             for (String t : tokens) if (t.equals(r.shortName)) return true;
         }
         return false;
+    }
+
+    // -------------------------------------------------- v1.7.0: nearby stops
+
+    /** One physical stop with its distance to the user, in meters. */
+    public static final class NearStop {
+        public final String stopId;   // the closest quay of the physical stop
+        public final String name;
+        public final int meters;
+
+        NearStop(String stopId, String name, int meters) {
+            this.stopId = stopId;
+            this.name = name;
+            this.meters = meters;
+        }
+    }
+
+    /** Great-circle distance in meters (haversine, R = 6371000 m). Pure. */
+    public static int distM(double latDeg1, double lonDeg1, double latDeg2, double lonDeg2) {
+        double lat1 = Math.toRadians(latDeg1), lon1 = Math.toRadians(lonDeg1);
+        double lat2 = Math.toRadians(latDeg2), lon2 = Math.toRadians(lonDeg2);
+        double dLat = lat2 - lat1, dLon = lon2 - lon1;
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return (int) Math.round(6371000.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    /**
+     * The physical stops closest to the given position, nearest first.
+     * Quays sharing a name are merged: the closest one represents the stop
+     * (its id is what the widget binds to; whole-stop mode merges the
+     * siblings at query time anyway). Empty when the catalog has no P
+     * records. Pure — JVM-harness tested.
+     */
+    public List<NearStop> nearestStops(double latDeg, double lonDeg, int max) {
+        ArrayList<NearStop> out = new ArrayList<NearStop>(64);
+        if (stopPos.isEmpty() || max <= 0) return out;
+        double latRad = Math.toRadians(latDeg), lonRad = Math.toRadians(lonDeg);
+        // name -> best (quayId, meters)
+        HashMap<String, Object[]> best = new HashMap<String, Object[]>(256);
+        for (Map.Entry<String, double[]> e : stopPos.entrySet()) {
+            double[] ll = e.getValue();
+            double dLat = ll[0] - latRad, dLon = ll[1] - lonRad;
+            double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                    + Math.cos(latRad) * Math.cos(ll[0])
+                            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            int m = (int) Math.round(6371000.0 * 2
+                    * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+            String name = stopNames.get(e.getKey());
+            if (name == null) continue;
+            Object[] cur = best.get(name);
+            if (cur == null || m < ((Integer) cur[1]).intValue()) {
+                best.put(name, new Object[]{e.getKey(), Integer.valueOf(m)});
+            }
+        }
+        for (Object[] v : best.values()) {
+            out.add(new NearStop((String) v[0], stopNames.get(v[0]),
+                    ((Integer) v[1]).intValue()));
+        }
+        Collections.sort(out, new Comparator<NearStop>() {
+            public int compare(NearStop a, NearStop b) {
+                return a.meters < b.meters ? -1 : (a.meters > b.meters ? 1 : 0);
+            }
+        });
+        return out.size() > max
+                ? new ArrayList<NearStop>(out.subList(0, max)) : out;
     }
 }

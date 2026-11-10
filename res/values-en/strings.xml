@@ -18,17 +18,29 @@
     <string name="hour_fmt">%1$dh%2$02d</string>
     <string name="late_min_fmt">+%d′</string>
     <string name="late_hour_fmt">+%1$dh%2$02d</string>
+    <!-- v1.7.0: early vehicle. -->
+    <string name="early_min_fmt">-%d′</string>
+    <string name="early_hour_fmt">-%1$dh%2$02d</string>
+    <string name="one_stop">1 stop away</string>
     <string name="all_lines">All lines</string>
 
     <!-- Configuration -->
     <string name="config_title">Widget setup</string>
     <string name="mode_line">Line</string>
     <string name="mode_stop">Stop</string>
+    <string name="mode_nearby">Nearby</string>
     <string name="search_hint">Search…</string>
     <string name="step_lines">Pick a line</string>
     <string name="step_directions_fmt">Direction of line %s</string>
     <string name="step_stops_fmt">Stops — %s</string>
     <string name="step_all_stops">All stops</string>
+    <!-- v1.7.0: nearby stop picker. -->
+    <string name="step_nearby">Stops near you</string>
+    <string name="nearby_fmt">%s away</string>
+    <string name="nearby_locating">Locating…</string>
+    <string name="nearby_no_fix">No position found — turn location on, or search your stop</string>
+    <string name="nearby_no_coords">Stop coordinates are missing from this timetable — check for updates</string>
+    <string name="nearby_denied">Location denied — search your stop instead</string>
     <string name="back">Back</string>
     <string name="direction_fmt">→ %s</string>
     <string name="stop_count_fmt">%d stops</string>
@@ -204,6 +216,7 @@
     <string name="layout_detailed">Detailed — destination and time</string>
     <string name="layout_compact">Compact — line and minutes</string>
     <string name="layout_modern">Modern — rounded cards and badges</string>
+    <string name="layout_large">Large text — bigger fonts</string>
     <string name="catexp_banner_fmt">Timetable valid until %s — consider updating the app</string>
     <string name="catexp_notif_title">Timetable expiring soon</string>
     <string name="catexp_notif_body_fmt">The built-in timetable covers the network until %s. Update Divia Widget to get a fresh catalogue (check: Settings → Check for updates).</string>

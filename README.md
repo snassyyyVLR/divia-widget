@@ -13,11 +13,9 @@ the only permissions are the network, notifications and (for the self-
 updater) installing packages: the whole app is a few dozen KB of dependency-
 free Java, a purpose-built GTFS-RT protobuf parser and a small JSON scanner.
 
-Current release: **release-1.6.2** — version numbering follows the public
+Current release: **release-1.7.0** — version numbering follows the public
 GitHub release line (previous public drop: release-1.4.0, the private-key
-migration). `versionCode` stays monotonic (now 20; 18 was the 1.6.0 test
-drop, 19 the broken 1.6.1 — it shipped the updater fix but regressed the
-1.6.0 UI; 1.6.2 is the two properly merged); releases since 1.4.0
+migration). `versionCode` stays monotonic (now 21); releases since 1.4.0
 are signed with the private release key and install in place.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
@@ -69,14 +67,36 @@ are signed with the private release key and install in place.
   zero-dependency ApkProvider, with a tap-to-install notification as
   the durable handle. Coming from 1.5.2 on such a ROM you install
   1.6.2 manually once — every later update flows in place.
-- **Three widget dispositions (1.5.0/1.6.0)** — every widget picks its own
+- **Four widget dispositions (1.5.0–1.7.0)** — every widget picks its own
   layout: *Détaillée* (destination + clock), *Compacte* (line badge +
-  minutes, denser rows, right-aligned countdown) or the new *Moderne*
-  (soft rounded row cards, badge pills, big minutes). Colors stay
-  automatic (launcher day/night) in all three.
+  minutes, denser rows, right-aligned countdown), *Moderne* (soft rounded
+  row cards, badge pills, big minutes) or *Grands caractères* (the
+  detailed layout with bigger type). The picker shows a LIVE preview of
+  each disposition, inflated from the very RemoteViews the launcher would
+  receive. Colors stay automatic (launcher day/night) in all four.
 - **Polished app screens (1.6.0)** — tinted banners, segmented mode
   control in the picker, per-line colored badge pills on the home list,
   hero empty state, light/dark status bar.
+- **Fresh timetables without app updates (1.7.0)** — the bundled GTFS
+  catalogue now refreshes ITSELF: once a day the app scans this repo's
+  GitHub releases for a newer `catalog.gz` asset, validates it (it must
+  parse AND cover at least as far as the current one) and installs it
+  atomically. A weekly GitHub Action (`.github/workflows/catalog.yml`)
+  regenerates the catalogue from the official GTFS and publishes it on
+  the rolling `timetable` release — horaires stay current without
+  shipping a single APK.
+- **"Stops near me" picker (1.7.0, opt-in)** — the picker has a third
+  mode next to line/stop: *Autour de moi*. Location is requested at
+  runtime, only when that mode is opened, and used once to list the
+  closest stops (the widget itself never touches location).
+- **Where the vehicle actually is (1.7.0)** — the Divia vehicle-positions
+  feed is fetched in parallel with departures: a departure served by a
+  vehicle sitting at the stop just before yours is tagged "à 1 arrêt".
+- **Early vehicles (1.7.0)** — a vehicle running ≥ 2 min AHEAD of the
+  timetable gets a green countdown and a "-2′" marker, mirroring the
+  amber "+4′" late state.
+- **Per-line info-trafic (1.7.0)** — disruption posts that name specific
+  lines you don't ride no longer ring; network-wide posts still do.
 - **"Dernier départ" tag (1.5.0)** — the row of a line's last departure of
   the day carries a `dernier` marker (computed from the bundled timetable,
   so it survives even when the live feed's horizon is short). No more
@@ -181,11 +201,14 @@ The build is intentionally paranoid about two widget-specific traps:
   against the previously published APK (`aapt2 dump resources` on both), so
   widgets survive the update untouched — including the five-row ids in
   1.2.0, the updater ids in 1.3.0, the compact-layout ids in 1.5.0, the
-  modern-layout ids in 1.6.0 and the updater-fallback strings in 1.6.2
+  modern-layout ids in 1.6.0, the updater-fallback strings in 1.6.2
   (pinned at 0x7f0600b0-b3 — NOT at the 0x7f0600af-b2 the broken 1.6.1
   assigned them, which collided with `layout_modern` = 0x7f0600af; string
   ids never ride in launcher-cached RemoteViews, so the renumbering is
-  invisible to widgets).
+  invisible to widgets) and the 1.7.0 additions (early color, large
+  layout, nearby-picker ids/strings) at 0x7f010012/0x7f020018/0x7f03004a/
+  0x7f040009/0x7f0600b4-be. The large layout reuses every detailed-layout
+  view id, so widgets switch dispositions with zero id churn.
   The compact layout reuses every detailed-layout view id (only
   `cbadge0..4` are new), so cached RemoteViews keep resolving in both
   dispositions.
@@ -224,11 +247,12 @@ exactly that. Consequences:
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.6.2, API 21-34)
+AndroidManifest.xml     app manifest (version 1.7.0, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
 run-tests.sh            JVM test harness runner (1080 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
+.github/workflows/      weekly timetable Action (catalog.gz release)
 debug.keystore          shared debug signing key
 src/com/zai/divia/      app code (widget provider, refresh engine, activities)
 src/com/zai/divia/core/ pure-Java core: catalog, GTFS-RT parser, RSS reader

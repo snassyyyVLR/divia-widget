@@ -32,7 +32,8 @@ public final class WidgetPrefs {
         public int rows = 0;
         /** Last height the launcher reported for this widget, in dp. */
         public int heightDp = 0;
-        /** v1.6.0 disposition: 0 = detailed, 1 = compact, 2 = modern.
+        /** v1.6.0 disposition: 0 = detailed, 1 = compact, 2 = modern,
+         *  3 = large (v1.7.0, bigger type on the detailed structure).
          *  −1 = stored before 1.6.0 (only the compact boolean existed) —
          *  layoutVariant() derives it on the fly. */
         public int layout = -1;
@@ -41,10 +42,11 @@ public final class WidgetPrefs {
         public boolean compact = false;
     }
 
-    /** Effective disposition of a config: the 1.6.0 layout int, or the
-     *  legacy compact boolean when absent (0 detailed / 1 compact / 2 modern). */
+    /** Effective disposition of a config: the 1.6.0/1.7.0 layout int, or
+     *  the legacy compact boolean when absent (0 detailed / 1 compact /
+     *  2 modern / 3 large). */
     public static int layoutVariant(WidgetPrefs.Config cfg) {
-        if (cfg.layout >= 0 && cfg.layout <= 2) return cfg.layout;
+        if (cfg.layout >= 0 && cfg.layout <= 3) return cfg.layout;
         return cfg.compact ? 1 : 0;
     }
 
@@ -381,6 +383,31 @@ public final class WidgetPrefs {
 
     public static void setUpdateLastCheck(Context c, long ts) {
         diagPrefs(c).edit().putLong("upd_check", ts).apply();
+    }
+
+    /**
+     * v1.7.0: last runtime catalogue check (GitHub releases scan),
+     * throttled to one per day by RefreshLogic.maybeRefreshCatalog.
+     */
+    public static long getCatalogLastCheck(Context c) {
+        return diagPrefs(c).getLong("cat_check", 0L);
+    }
+
+    public static void setCatalogLastCheck(Context c, long ts) {
+        diagPrefs(c).edit().putLong("cat_check", ts).apply();
+    }
+
+    /**
+     * v1.7.0: updated_at stamp of the catalogue asset currently installed
+     * in filesDir ("" = only the bundled asset). A new asset with a newer
+     * stamp is the download trigger.
+     */
+    public static String getCatalogStamp(Context c) {
+        return diagPrefs(c).getString("cat_stamp", "");
+    }
+
+    public static void setCatalogStamp(Context c, String stamp) {
+        diagPrefs(c).edit().putString("cat_stamp", stamp == null ? "" : stamp).apply();
     }
 
     /**

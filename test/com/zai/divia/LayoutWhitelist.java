@@ -105,6 +105,15 @@ public final class LayoutWhitelist {
                         "dest0", "dest1", "dest2", "dest3", "dest4",
                         "count0", "count1", "count2", "count3", "count4",
                         "clock0", "clock1", "clock2", "clock3", "clock4")));
+
+        System.out.println("[widget layout whitelist — large variant]");
+        checkLayout("res/layout/widget_divia_large.xml",
+                "large", NEEDED_IDS, "row|dest|count|clock",
+                new HashSet<String>(Arrays.asList(
+                        "row0", "row1", "row2", "row3", "row4",
+                        "dest0", "dest1", "dest2", "dest3", "dest4",
+                        "count0", "count1", "count2", "count3", "count4",
+                        "clock0", "clock1", "clock2", "clock3", "clock4")));
         if (declaredDetailed == null) return; // parse already failed loudly
 
         System.out.println("[widget provider info]");

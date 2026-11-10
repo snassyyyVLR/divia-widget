@@ -18,17 +18,29 @@
     <string name="hour_fmt">%1$dh%2$02d</string>
     <string name="late_min_fmt">+%d′</string>
     <string name="late_hour_fmt">+%1$dh%2$02d</string>
+    <!-- v1.7.0: véhicule en avance. -->
+    <string name="early_min_fmt">-%d′</string>
+    <string name="early_hour_fmt">-%1$dh%2$02d</string>
+    <string name="one_stop">à 1 arrêt</string>
     <string name="all_lines">Toutes les lignes</string>
 
     <!-- Configuration -->
     <string name="config_title">Configurer le widget</string>
     <string name="mode_line">Ligne</string>
     <string name="mode_stop">Arrêt</string>
+    <string name="mode_nearby">Autour de moi</string>
     <string name="search_hint">Rechercher…</string>
     <string name="step_lines">Choisissez une ligne</string>
     <string name="step_directions_fmt">Sens de la ligne %s</string>
     <string name="step_stops_fmt">Arrêts — %s</string>
     <string name="step_all_stops">Tous les arrêts</string>
+    <!-- v1.7.0 : sélection d'arrêt à proximité. -->
+    <string name="step_nearby">Arrêts autour de vous</string>
+    <string name="nearby_fmt">à %s</string>
+    <string name="nearby_locating">Localisation en cours…</string>
+    <string name="nearby_no_fix">Position introuvable — activez la localisation, ou cherchez votre arrêt</string>
+    <string name="nearby_no_coords">Les coordonnées des arrêts manquent dans ce catalogue — vérifiez les mises à jour</string>
+    <string name="nearby_denied">Localisation refusée — cherchez votre arrêt</string>
     <string name="back">Retour</string>
     <string name="direction_fmt">→ %s</string>
     <string name="stop_count_fmt">%d arrêts</string>
@@ -205,6 +217,7 @@
     <string name="layout_detailed">Détaillée — destination et horaire</string>
     <string name="layout_compact">Compacte — ligne et minutes</string>
     <string name="layout_modern">Moderne — cartes arrondies et badges</string>
+    <string name="layout_large">Grands caractères — texte agrandi</string>
     <string name="catexp_banner_fmt">Horaires valables jusqu\'au %s — pensez à mettre l\'app à jour</string>
     <string name="catexp_notif_title">Horaires bientôt périmés</string>
     <string name="catexp_notif_body_fmt">Les horaires intégrés couvrent le réseau jusqu\'au %s. Mettez à jour Divia Widget pour récupérer un catalogue à jour (vérification : Réglages → Vérifier les mises à jour).</string>

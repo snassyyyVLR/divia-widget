@@ -92,6 +92,47 @@ public final class TrafficFeed {
         return false;
     }
 
+    /**
+     * v1.7.0: which known lines a post explicitly names, by scanning its
+     * title and category for word-boundary mentions ("T1", "ligne 5",
+     * "Ligne L3"…). Pure — JVM-harness tested.
+     */
+    public static java.util.Set<String> linesMentioned(Item it,
+            java.util.Collection<String> knownShorts) {
+        java.util.HashSet<String> out = new java.util.HashSet<String>(8);
+        if (it == null || knownShorts == null || knownShorts.isEmpty()) return out;
+        String text = ((it.title == null ? "" : it.title) + " "
+                + (it.category == null ? "" : it.category));
+        for (String shortName : knownShorts) {
+            if (shortName == null || shortName.isEmpty()) continue;
+            // Word-boundary, case-insensitive: "5" must not match inside
+            // "50", "T1" not inside "T10"/"PT1".
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(?<![A-Za-z0-9])" + java.util.regex.Pattern.quote(shortName)
+                            + "(?![A-Za-z0-9])", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(text);
+            if (m.find()) out.add(shortName);
+        }
+        return out;
+    }
+
+    /**
+     * v1.7.0: does a disruption post concern the user? A post that names
+     * no known line at all is network-wide — it concerns everyone, and so
+     * is one naming five or more lines (a big strike lists them all). A
+     * post naming a handful of lines concerns the user only when one of
+     * them is among theirs. Pure — JVM-harness tested.
+     */
+    public static boolean concernsUser(Item it, java.util.Set<String> userLines,
+            java.util.Collection<String> knownShorts) {
+        java.util.Set<String> mentioned = linesMentioned(it, knownShorts);
+        if (mentioned.isEmpty() || mentioned.size() >= 5) return true;
+        for (String u : userLines) {
+            if (mentioned.contains(u)) return true;
+        }
+        return false;
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /** Content of the first <name>…</name> (CDATA stripped), or "". */

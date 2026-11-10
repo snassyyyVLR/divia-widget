@@ -12,6 +12,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.LayoutInflater;
@@ -20,12 +21,14 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.NumberPicker;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -401,40 +404,105 @@ public class HomeActivity extends Activity {
     }
 
     /**
-     * v1.5.0/v1.6.0: layout-variant chooser (replaces the rejected color
-     * themes). Détaillée = destination + clock on 24dp rows; Compacte =
-     * line badge + minutes only, denser rows; Moderne = soft row cards
-     * with badge pills and big minutes. Colors stay automatic (the
-     * launcher's day/night switching) in all three dispositions.
+     * v1.5.0/v1.6.0/v1.7.0: layout-variant chooser with LIVE PREVIEWS —
+     * each option shows the real widget layout inflated from the exact
+     * RemoteViews the launcher would receive, filled with sample data.
+     * Détaillée = destination + clock on 24dp rows; Compacte = line badge
+     * + minutes only, denser rows; Moderne = soft row cards with badge
+     * pills and big minutes; Grands caractères (1.7.0) = the detailed
+     * structure with bigger type. Colors stay automatic (the launcher's
+     * day/night switching) in every disposition.
      */
     private void chooseLayout(final int wid, final WidgetPrefs.Config cfg) {
-        String[] labels = {
-                getString(R.string.layout_detailed),
-                getString(R.string.layout_compact),
-                getString(R.string.layout_modern),
-        };
+        final int[] variants = {
+                RefreshLogic.LAYOUT_DETAILED, RefreshLogic.LAYOUT_COMPACT,
+                RefreshLogic.LAYOUT_MODERN, RefreshLogic.LAYOUT_LARGE};
+        final int[] labels = {
+                R.string.layout_detailed, R.string.layout_compact,
+                R.string.layout_modern, R.string.layout_large};
         int checked = WidgetPrefs.layoutVariant(cfg);
-        if (checked < 0 || checked > 2) checked = 0;
-        final int[] sel = {checked};
-        new AlertDialog.Builder(this)
+
+        Catalog cat = null;
+        try {
+            cat = RefreshLogic.catalog(this);
+        } catch (Throwable ignored) {
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_DIP, 16,
+                getResources().getDisplayMetrics());
+        box.setPadding(pad, pad / 2, pad, pad / 2);
+        scroll.addView(box);
+
+        final AlertDialog[] holder = new AlertDialog[1];
+        for (int v = 0; v < variants.length; v++) {
+            final int variant = variants[v];
+
+            TextView label = new TextView(this);
+            label.setText(getString(labels[v]));
+            label.setTextColor(getResources().getColor(R.color.txt_sub));
+            label.setTextSize(13);
+            label.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = pad / 2;
+            lp.bottomMargin = pad / 4;
+            label.setLayoutParams(lp);
+            if (v != checked) label.setAlpha(0.55f);
+            box.addView(label);
+
+            try {
+                android.widget.RemoteViews rv =
+                        RefreshLogic.previewViews(this, cat, variant);
+                FrameLayout card = new FrameLayout(this);
+                // Foreground ripple needs API 23; older devices get a plain
+                // (still clickable) card — never a crash for a coat of paint.
+                if (Build.VERSION.SDK_INT >= 23) {
+                    card.setForeground(getDrawable(R.drawable.item_card_ripple));
+                }
+                card.setClickable(true);
+                card.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        cfg.layout = variant;
+                        // Legacy boolean, still written so a downgrade to a
+                        // 1.5.x app renders sensibly.
+                        cfg.compact = variant == RefreshLogic.LAYOUT_COMPACT;
+                        WidgetPrefs.save(HomeActivity.this, wid, cfg);
+                        RefreshLogic.kick(HomeActivity.this);
+                        if (holder[0] != null) holder[0].dismiss();
+                    }
+                });
+                rv.apply(this, card);
+                box.addView(card, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+            } catch (Throwable t) {
+                // A preview that cannot inflate must not break the picker:
+                // fall back to the plain text choice for this variant.
+                WidgetPrefs.setLastError(this, "layout-preview: " + t);
+                TextView fallback = new TextView(this);
+                fallback.setText(getString(labels[v]));
+                fallback.setTextSize(16);
+                fallback.setPadding(0, pad / 4, 0, pad / 4);
+                fallback.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        cfg.layout = variant;
+                        cfg.compact = variant == RefreshLogic.LAYOUT_COMPACT;
+                        WidgetPrefs.save(HomeActivity.this, wid, cfg);
+                        RefreshLogic.kick(HomeActivity.this);
+                        if (holder[0] != null) holder[0].dismiss();
+                    }
+                });
+                box.addView(fallback);
+            }
+        }
+
+        holder[0] = new AlertDialog.Builder(this)
                 .setTitle(R.string.layout_title)
-                .setSingleChoiceItems(labels, checked,
-                        new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int which) {
-                                sel[0] = which;
-                            }
-                        })
-                .setPositiveButton(android.R.string.ok,
-                        new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) {
-                                cfg.layout = sel[0];
-                                // Legacy boolean, still written so a
-                                // downgrade to a 1.5.x app renders sensibly.
-                                cfg.compact = sel[0] == 1;
-                                WidgetPrefs.save(HomeActivity.this, wid, cfg);
-                                RefreshLogic.kick(HomeActivity.this);
-                            }
-                        })
+                .setView(scroll)
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }

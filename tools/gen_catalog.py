@@ -5,6 +5,7 @@ Reads static GTFS (routes/stops/trips/stop_times/calendar) and emits gzipped tex
 
   L|route_id|short_name|long_name|route_type|color_hex
   S|stop_id|stop_name
+  P|stop_id|lat|lon                     (v1.7.0: stop coordinates, "nearby stops" picker)
   T|trip_id|route_id|direction|headsign
   D|route_id|direction|stop_id,stop_id,...   (ordered stops, canonical trip = longest)
   B|route_id|direction|label                 (most frequent headsign of that dir)
@@ -82,6 +83,16 @@ for r in routes:
     out.append(f"L|{r['route_id']}|{r['route_short_name']}|{r['route_long_name']}|{r['route_type']}|{r['route_color']}")
 for s in stops:
     out.append(f"S|{s['stop_id']}|{s['stop_name']}")
+# v1.7.0: stop coordinates (6 decimals ≈ 11 cm) for the "stops near me"
+# picker. Old app versions ignore the unknown record kind, so the file
+# stays compatible with every published version.
+for s in stops:
+    try:
+        lat = f"{float(s['stop_lat']):.6f}"
+        lon = f"{float(s['stop_lon']):.6f}"
+        out.append(f"P|{s['stop_id']}|{lat}|{lon}")
+    except (KeyError, ValueError):
+        continue
 for t in trips:
     out.append(f"T|{t['trip_id']}|{t['route_id']}|{t['direction_id']}|{t['trip_headsign']}")
 for (rid, d), (n, tid) in best.items():

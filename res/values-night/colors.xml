@@ -8,6 +8,8 @@
     <color name="divider">#2C2F38</color>
     <color name="countdown">#FF5A68</color>
     <color name="late">#FFA940</color>
+    <!-- v1.7.0: early (green) night variant. -->
+    <color name="early">#4ADE80</color>
     <color name="badge_bg">#E2001A</color>
     <color name="badge_text">#FFFFFF</color>
     <color name="screen_bg">#121317</color>

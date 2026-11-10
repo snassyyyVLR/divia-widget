@@ -94,11 +94,24 @@
             android:layout_weight="1"
             android:button="@null"
             android:gravity="center"
-            android:background="@drawable/seg_btn_right"
+            android:background="@drawable/seg_btn_mid"
             android:textColor="@drawable/seg_text_color"
             android:textSize="14sp"
             android:textStyle="bold"
             android:text="@string/mode_stop"/>
+
+        <RadioButton
+            android:id="@+id/mode_nearby_btn"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:button="@null"
+            android:gravity="center"
+            android:background="@drawable/seg_btn_right"
+            android:textColor="@drawable/seg_text_color"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="@string/mode_nearby"/>
     </RadioGroup>
 
     <EditText

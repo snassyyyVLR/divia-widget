@@ -15,6 +15,13 @@ public final class Departure implements Comparable<Departure> {
     public final int delaySec;       // delay vs timetable in s; Integer.MIN_VALUE when unknown
     public final String tripId;      // GTFS trip id (used to re-find the trip for alerts); may be null
 
+    /** v1.7.0: 1 when the serving vehicle is at (or just left) the stop
+     *  right before ours, per the vehicle-positions feed — the row then
+     *  carries an "à 1 arrêt" tag. 0 = unknown / not applicable. Not
+     *  final: RefreshLogic annotates it after the fetch, so cached
+     *  repaints keep the tag. */
+    public int stopsAway;
+
     public Departure(String routeId, String lineShort, String headsign, int direction,
                      long timeSec, int delaySec) {
         this(routeId, lineShort, headsign, direction, timeSec, delaySec, null);

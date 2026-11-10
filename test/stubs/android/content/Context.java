@@ -38,6 +38,17 @@ public class Context {
         return new android.content.res.AssetManager(assetPath);
     }
 
+    /**
+     * v1.7.0: files dir seen by RefreshLogic.catalog(). The harness leaves
+     * it null unless a test installs a downloaded-catalogue file — on a
+     * null parent, new File(null, "catalog.gz") is a plain relative path
+     * whose isFile() is false, so the asset is used, exactly like on a
+     * fresh device.
+     */
+    public java.io.File filesDir;
+
+    public java.io.File getFilesDir() { return filesDir; }
+
     public android.content.res.Resources getResources() {
         return resources;
     }

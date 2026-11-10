@@ -27,6 +27,12 @@ public final class DiviaApi {
     public static final String FEED_URL =
             "https://proxy.transport.data.gouv.fr/resource/divia-dijon-gtfs-rt-trip-update";
 
+    /** v1.7.0: same proxy, the vehicle-positions feed — grounds the
+     *  "à 1 arrêt" tag on where vehicles actually are (the trip-update
+     *  predictions say nothing about passed stops). */
+    public static final String VP_FEED_URL =
+            "https://proxy.transport.data.gouv.fr/resource/divia-dijon-gtfs-rt-vehicle-position";
+
     private DiviaApi() {}
 
     /** HTTP GET of the protobuf feed. Handles gzip Content-Encoding.

@@ -1,0 +1,58 @@
+# Weekly timetable build: downloads the current Divia GTFS, regenerates
+# catalog.gz (now with stop coordinates), and publishes it as the asset of
+# the rolling "timetable" release. The APP (1.7.0+) picks it up at most
+# once a day at refresh time — horaires stay fresh without shipping an
+# APK. Manual trigger: workflow_dispatch.
+name: timetable
+on:
+  schedule:
+    - cron: "0 5 * * 1"   # Mondays 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the current Divia GTFS
+        run: |
+          # data.gouv.fr's canonical resource URL — always redirects to
+          # the latest published gtfs-diviamobilites-current.zip.
+          curl -fsSL --retry 3 -o gtfs.zip \
+            "https://www.data.gouv.fr/api/1/datasets/r/e0dbd217-15cd-4e28-9459-211a27511a34"
+          mkdir -p gtfs
+          unzip -q gtfs.zip -d gtfs
+
+      - name: Regenerate catalog.gz
+        run: python3 tools/gen_catalog.py gtfs assets/catalog.gz
+
+      - name: Sanity-check the catalog
+        run: |
+          python3 - << 'PY'
+          import gzip
+          lines = gzip.open("assets/catalog.gz", "rt", encoding="utf-8").read().splitlines()
+          kinds = {}
+          for l in lines:
+              kinds[l[:1]] = kinds.get(l[:1], 0) + 1
+          assert kinds.get("M", 0) == 1, "exactly one M (validity) record expected"
+          assert kinds.get("P", 0) > 1000, f"stop coordinates expected, got {kinds.get('P', 0)}"
+          assert kinds.get("S", 0) > 1000 and kinds.get("L", 0) > 40
+          print("catalog OK:", kinds)
+          PY
+
+      - name: Publish the rolling "timetable" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete timetable --yes --cleanup-tag || true
+          gh release create timetable assets/catalog.gz \
+            --title "Horaires du réseau" \
+            --notes "Catalogue d'horaires régénéré chaque semaine depuis le GTFS officiel Divia. L'application le télécharge toute seule — rien à installer ici."

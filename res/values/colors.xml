@@ -8,6 +8,8 @@
     <color name="divider">#ECEEF2</color>
     <color name="countdown">#E2001A</color>
     <color name="late">#B45309</color>
+    <!-- v1.7.0: vehicle running EARLY — green countdown + "-N'" marker. -->
+    <color name="early">#047857</color>
     <color name="badge_bg">#E2001A</color>
     <color name="badge_text">#FFFFFF</color>
     <color name="screen_bg">#F4F5F7</color>

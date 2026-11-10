@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zai.divia"
-    android:versionCode="20"
-    android:versionName="1.6.2">
+    android:versionCode="21"
+    android:versionName="1.7.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- v1.7.0: the "around me" stop picker. Requested at RUNTIME only,
+         when the user switches to that picker mode — the app runs fine
+         without it (search covers everything). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- v1.1.0: departure alerts + info-trafic alerts (runtime-granted on 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 

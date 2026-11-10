@@ -6,16 +6,20 @@
 package com.zai.divia.core;
 
 /**
- * Minimal from-scratch parser for GTFS-Realtime trip-update feeds.
+ * Minimal from-scratch parser for GTFS-Realtime feeds.
  * Pure Java (no dependencies) so it can be unit-tested on a desktop JVM.
  *
  * Only the subset of the protobuf schema we need is decoded:
  *   FeedMessage{ header=1, entity=2 }
- *     FeedEntity{ id=1, trip_update=3 }
+ *     FeedEntity{ id=1, trip_update=3, vehicle=4 }
  *       TripUpdate{ trip=1 (TripDescriptor), stop_time_update=2 }
  *         TripDescriptor{ trip_id=1, route_id=5, direction_id=6, schedule_relationship=4 }
  *         StopTimeUpdate{ arrival=2 (StopTimeEvent), departure=3, stop_id=4, schedule_relationship=5 }
  *           StopTimeEvent{ delay=1, time=2 }
+ *       VehiclePosition{ trip=1 (TripDescriptor), position=2,
+ *                        current_status=4, timestamp=5, stop_id=7 }
+ *         (v1.7.0 — "one stop away": current_status 1 = STOPPED_AT
+ *          at stop_id, 2 = IN_TRANSIT_TO stop_id)
  */
 public final class ProtoRt {
 
@@ -41,6 +45,24 @@ public final class ProtoRt {
         }
     }
 
+    /** One vehicle of the network, as reported by the vehicle-positions
+     *  feed (v1.7.0). Only what the "one stop away" tag needs. */
+    public static final class VehiclePos {
+        public final String tripId;    // null when the feed omits it
+        public final String routeId;   // null when absent
+        public final String stopId;    // the current stop: STOPPED_AT it,
+                                       // or IN_TRANSIT_TO it
+        public final int status;       // 1 = STOPPED_AT, 2 = IN_TRANSIT_TO,
+                                       // 0 = INCOMING_AT; -1 when absent
+
+        VehiclePos(String tripId, String routeId, String stopId, int status) {
+            this.tripId = tripId;
+            this.routeId = routeId;
+            this.stopId = stopId;
+            this.status = status;
+        }
+    }
+
     private ProtoRt() {}
 
     /** Parse a whole FeedMessage; returns every stop event found. */
@@ -60,6 +82,123 @@ public final class ProtoRt {
             }
         }
         return out;
+    }
+
+    /**
+     * v1.7.0: parse a vehicle-positions FeedMessage into trip_id →
+     * position. Entities without a trip id are dropped (we can only match
+     * them to departures by trip). Never throws: a malformed entity is
+     * skipped, the rest of the feed survives.
+     */
+    public static java.util.Map<String, VehiclePos> parseVehicles(byte[] pb) {
+        java.util.HashMap<String, VehiclePos> out = new java.util.HashMap<String, VehiclePos>(128);
+        if (pb == null || pb.length == 0) return out;
+        Cursor c;
+        try {
+            c = new Cursor(pb, 0, pb.length);
+        } catch (Throwable t) {
+            return out;
+        }
+        while (c.hasMore()) {
+            int key;
+            try {
+                key = c.readKey();
+            } catch (Throwable t) {
+                break;
+            }
+            int field = key >>> 3;
+            int wire = key & 7;
+            if (wire == 2) {
+                int len = (int) c.readVarint();
+                if (field == 2) {
+                    try {
+                        parseVehicleEntity(c.readBytes(len), out);
+                    } catch (Throwable t) {
+                        // one broken entity must not kill the whole feed
+                    }
+                } else {
+                    c.skip(len);
+                }
+            } else {
+                try {
+                    c.skipValue(wire);
+                } catch (Throwable t) {
+                    break;   // corrupt framing — keep what we have
+                }
+            }
+        }
+        return out;
+    }
+
+    private static void parseVehicleEntity(byte[] ent,
+                                           java.util.Map<String, VehiclePos> out) {
+        Cursor c = new Cursor(ent, 0, ent.length);
+        while (c.hasMore()) {
+            int key = c.readKey();
+            int field = key >>> 3;
+            int wire = key & 7;
+            if (wire == 2) {
+                int len = (int) c.readVarint();
+                if (field == 4) {
+                    parseVehicle(c.readBytes(len), out);
+                } else {
+                    c.skip(len);
+                }
+            } else {
+                c.skipValue(wire);
+            }
+        }
+    }
+
+    private static void parseVehicle(byte[] vp,
+                                     java.util.Map<String, VehiclePos> out) {
+        String tripId = null, routeId = null, stopId = null;
+        int status = -1;
+        Cursor c = new Cursor(vp, 0, vp.length);
+        while (c.hasMore()) {
+            int key = c.readKey();
+            int field = key >>> 3;
+            int wire = key & 7;
+            if (wire == 2) {
+                int len = (int) c.readVarint();
+                if (field == 1) {
+                    byte[] td = c.readBytes(len);
+                    Cursor tc = new Cursor(td, 0, td.length);
+                    while (tc.hasMore()) {
+                        int k2 = tc.readKey();
+                        int f2 = k2 >>> 3;
+                        int w2 = k2 & 7;
+                        if (w2 == 2) {
+                            int l2 = (int) tc.readVarint();
+                            if (f2 == 1) {
+                                tripId = new String(tc.readBytes(l2),
+                                        java.nio.charset.StandardCharsets.UTF_8);
+                            } else if (f2 == 5) {
+                                routeId = new String(tc.readBytes(l2),
+                                        java.nio.charset.StandardCharsets.UTF_8);
+                            } else {
+                                tc.skip(l2);
+                            }
+                        } else {
+                            tc.skipValue(w2);
+                        }
+                    }
+                } else if (field == 7) {
+                    stopId = new String(c.readBytes(len),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                } else {
+                    c.skip(len);
+                }
+            } else if (wire == 0) {
+                long v = c.readVarint();
+                if (field == 4) status = (int) v;
+            } else {
+                c.skipValue(wire);
+            }
+        }
+        if (tripId != null) {
+            out.put(tripId, new VehiclePos(tripId, routeId, stopId, status));
+        }
     }
 
     private static void parseEntity(byte[] ent, java.util.List<Event> out) {

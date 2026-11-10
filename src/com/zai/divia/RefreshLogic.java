@@ -14,6 +14,7 @@ import android.widget.RemoteViews;
 import com.zai.divia.core.Catalog;
 import com.zai.divia.core.Departure;
 import com.zai.divia.core.DiviaApi;
+import com.zai.divia.core.ProtoRt;
 import com.zai.divia.core.TrafficFeed;
 
 import java.io.IOException;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -125,11 +127,31 @@ public final class RefreshLogic {
 
     static synchronized Catalog catalog(Context c) throws IOException {
         if (sCatalog == null) {
-            InputStream in = c.getAssets().open("catalog.gz");
-            try {
-                sCatalog = new Catalog(in);
-            } finally {
-                in.close();
+            // v1.7.0: a catalogue downloaded at runtime (CatalogUpdate)
+            // wins over the bundled asset — it is newer by construction
+            // (validUntil is validated before install). A corrupt file is
+            // deleted and the asset used instead; loading never fails
+            // twice in a row for the same reason.
+            java.io.File dl = new java.io.File(c.getFilesDir(), "catalog.gz");
+            if (dl.isFile()) {
+                InputStream in = null;
+                try {
+                    in = new java.io.FileInputStream(dl);
+                    sCatalog = new Catalog(in);
+                } catch (Throwable t) {
+                    sCatalog = null;
+                    try { dl.delete(); } catch (Throwable ignored) { }
+                } finally {
+                    if (in != null) try { in.close(); } catch (IOException ignored) { }
+                }
+            }
+            if (sCatalog == null) {
+                InputStream in = c.getAssets().open("catalog.gz");
+                try {
+                    sCatalog = new Catalog(in);
+                } finally {
+                    in.close();
+                }
             }
         }
         return sCatalog;
@@ -141,6 +163,76 @@ public final class RefreshLogic {
         } catch (Throwable t) {
             WidgetPrefs.setLastError(c, "catalog: " + t);
             return null;
+        }
+    }
+
+    /** v1.7.0: runtime catalogue refresh cadence — one scan per day. */
+    static final long CATALOG_CHECK_MS = 24L * 3600L * 1000L;
+
+    /**
+     * v1.7.0: keeps the timetable fresh WITHOUT shipping an APK: scans
+     * this repo's GitHub releases (at most once a day) for a catalog.gz
+     * asset newer than the installed one, downloads and validates it, and
+     * installs it into filesDir atomically (tmp + rename) — then repaints
+     * every widget with the new data. Called at the very end of a refresh
+     * cycle, so widgets are already rendered and nothing user-visible
+     * ever waits on it. Never throws; failures land in diagnostics and are
+     * retried after the next throttle window (a rejected/broken asset only
+     * retries once its updated_at changes).
+     */
+    static void maybeRefreshCatalog(Context c) {
+        try {
+            if (sTestFeed != null) return;   // JVM harness: no network
+            long now = System.currentTimeMillis();
+            if (now - WidgetPrefs.getCatalogLastCheck(c) < CATALOG_CHECK_MS) return;
+            WidgetPrefs.setCatalogLastCheck(c, now);
+
+            byte[] json = DiviaApi.fetch(
+                    "https://api.github.com/repos/" + com.zai.divia.core.ReleaseCheck.REPO
+                            + "/releases?per_page=30", 8000);
+            com.zai.divia.core.CatalogUpdate.Candidate cand =
+                    com.zai.divia.core.CatalogUpdate.findCatalog(json);
+            if (cand == null || cand.url.isEmpty()) return;   // nothing published
+            if (cand.stamp.compareTo(WidgetPrefs.getCatalogStamp(c)) <= 0) return;  // seen
+
+            byte[] gz = DiviaApi.fetch(cand.url, 15000);
+            Catalog cur = catalogQuiet(c);
+            String minUntil = cur != null ? cur.validUntil : "";
+            if (!com.zai.divia.core.CatalogUpdate.validate(gz, minUntil)) {
+                // Bad asset: remember the stamp so we do not hammer it daily.
+                WidgetPrefs.setCatalogStamp(c, cand.stamp);
+                WidgetPrefs.setLastError(c, "catalog-update: rejected asset " + cand.stamp);
+                return;
+            }
+
+            // Atomic install: write beside the target, then rename over it.
+            java.io.File dst = new java.io.File(c.getFilesDir(), "catalog.gz");
+            java.io.File tmp = new java.io.File(c.getFilesDir(), "catalog.gz.tmp");
+            java.io.FileOutputStream out = null;
+            try {
+                out = new java.io.FileOutputStream(tmp);
+                out.write(gz);
+                out.flush();
+                out.getFD().sync();
+            } finally {
+                if (out != null) try { out.close(); } catch (IOException ignored) { }
+            }
+            if (!tmp.renameTo(dst)) {
+                // Some ROMs refuse rename over an existing file.
+                dst.delete();
+                if (!tmp.renameTo(dst)) {
+                    tmp.delete();
+                    WidgetPrefs.setLastError(c, "catalog-update: rename failed");
+                    return;
+                }
+            }
+            WidgetPrefs.setCatalogStamp(c, cand.stamp);
+            synchronized (RefreshLogic.class) {
+                sCatalog = null;   // force the next load to pick the file
+            }
+            repaintAll(c, null);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "catalog-update: " + t);
         }
     }
 
@@ -188,6 +280,27 @@ public final class RefreshLogic {
         }
 
         // ---- pass 2: live data.
+        // v1.7.0: the vehicle-positions fetch runs IN PARALLEL with the
+        // trip-update fetch (started first, joined below), so the
+        // worst-case refresh time stays that of ONE fetch, not two (the
+        // receiver's goAsync window is ~10 s). It grounds the "à 1 arrêt"
+        // row tag on where the vehicles actually are; any failure just
+        // leaves the tag off for this cycle. Test mode uses the canned
+        // sTestVp instead of the network.
+        final byte[][] vpBox = new byte[1][];
+        Thread vpThread = null;
+        if (sTestVp == null && sTestFeed == null) {
+            vpThread = new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        vpBox[0] = DiviaApi.fetch(DiviaApi.VP_FEED_URL, 3000);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }, "divia-vp");
+            vpThread.setDaemon(true);
+            vpThread.start();
+        }
         byte[] feed = sTestFeed;
         Throwable fetchErr = null;
         if (feed == null) {
@@ -213,6 +326,16 @@ public final class RefreshLogic {
         }
 
         long nowSec = System.currentTimeMillis() / 1000L;
+        java.util.Map<String, ProtoRt.VehiclePos> vps;
+        if (vpThread != null) {
+            try {
+                vpThread.join(3000);
+            } catch (InterruptedException ignored) {
+            }
+            vps = ProtoRt.parseVehicles(vpBox[0]);
+        } else {
+            vps = ProtoRt.parseVehicles(sTestVp);
+        }
         for (int i = 0; i < ids.size(); i++) {
             int id = ids.get(i);
             WidgetPrefs.Config cfg = cfgs.get(i);
@@ -245,6 +368,7 @@ public final class RefreshLogic {
             synchronized (CACHE) {
                 CACHE.put(id, deps);
             }
+            annotateStopsAway(deps, cat, cfg, vps);
             WidgetPrefs.setLastOk(context, id, nowSec);
             cfg.lastOk = nowSec;
             safeRender(context, awm, id, cfg, cat, deps, nowSec * 1000L, false);
@@ -254,8 +378,74 @@ public final class RefreshLogic {
         }
         WidgetPrefs.setLastRefreshOk(context);
 
-        // ---- info-trafic watch (throttled, disruption posts only).
-        maybeCheckTraffic(context);
+        // ---- info-trafic watch (throttled, disruption posts only,
+        //      v1.7.0: filtered to the lines the user actually rides).
+        maybeCheckTraffic(context, userLines(context, ids, cat));
+
+        // ---- v1.7.0: runtime catalogue refresh (throttled to 1/day;
+        //      after the widgets are rendered, so it never delays them).
+        maybeRefreshCatalog(context);
+    }
+
+    /** Test seam for the JVM harness: canned vehicle-positions feed. */
+    static volatile byte[] sTestVp;
+
+    /**
+     * v1.7.0: sets {@link Departure#stopsAway} on the fetched departures —
+     * 1 when the serving vehicle sits at (or has just left) the stop right
+     * before the one shown, per the vehicle-positions feed. Never throws;
+     * pure lookups, JVM-harness tested.
+     */
+    static void annotateStopsAway(List<Departure> deps, Catalog cat, WidgetPrefs.Config cfg,
+                                  java.util.Map<String, ProtoRt.VehiclePos> vps) {
+        if (deps == null || cat == null || vps.isEmpty()) return;
+        try {
+            for (Departure d : deps) {
+                if (d.tripId == null || d.stopsAway != 0) continue;
+                ProtoRt.VehiclePos vp = vps.get(d.tripId);
+                if (vp == null || vp.stopId == null) continue;
+                d.stopsAway = stopsAway(cat, d, cfg, vp);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Distance, in stops of the line's ordered stop list, between the
+     * vehicle's current stop and the stop this widget shows. Only 1 ever
+     * leaves this method: the caller tags exactly the "vehicle at the
+     * previous stop" case (0 = unknown / behind / further away).
+     */
+    static int stopsAway(Catalog cat, Departure d, WidgetPrefs.Config cfg,
+                         ProtoRt.VehiclePos vp) {
+        String[] line = cat.lineStopIds(d.routeId, d.direction);
+        if (line == null) return 0;
+        // The widget's stop, as an index of that list: the configured quay
+        // in line mode, or the LAST sibling quay of the physical stop in
+        // whole-stop mode (several quays of one name share the list).
+        int userIdx = -1;
+        if (cfg.lineMode) {
+            for (int i = 0; i < line.length; i++) {
+                if (line[i].equals(cfg.stopId)) { userIdx = i; break; }
+            }
+        } else {
+            for (String sib : cat.siblingIds(cfg.stopId)) {
+                for (int i = 0; i < line.length; i++) {
+                    if (line[i].equals(sib) && i > userIdx) userIdx = i;
+                }
+            }
+        }
+        if (userIdx <= 0) return 0;
+        int vehIdx = -1;
+        for (int i = 0; i < line.length; i++) {
+            if (line[i].equals(vp.stopId)) { vehIdx = i; break; }
+        }
+        // The vehicle is one stop away when it is AT (STOPPED_AT) or has
+        // just left (IN_TRANSIT_TO past it... i.e. heading elsewhere) the
+        // immediately preceding stop of ours.
+        if (vehIdx != userIdx - 1) return 0;
+        return vp.status == 0 /* INCOMING_AT the previous stop: not yet there */
+                ? 0 : 1;
     }
 
     // -------------------------------------------------------------- repaint
@@ -307,7 +497,9 @@ public final class RefreshLogic {
     // destination + clock per row; disposition 1 (compact) =
     // widget_divia_compact.xml, "line badge + minutes only" on denser
     // rows. v1.6.0 adds disposition 2 (modern) = widget_divia_modern.xml:
-    // rows as soft cards, per-row line badge pills, big minutes. All
+    // rows as soft cards, per-row line badge pills, big minutes. v1.7.0
+    // adds disposition 3 (large) = widget_divia_large.xml: the detailed
+    // layout with bigger text for readability at arm's length. All
     // layouts share every view id except the per-row badges (cbadge0..4,
     // declared by compact and modern), so launchers re-applying cached
     // RemoteViews keep resolving after an in-place update either way.
@@ -315,6 +507,17 @@ public final class RefreshLogic {
     static final int LAYOUT_DETAILED = 0;
     static final int LAYOUT_COMPACT = 1;
     static final int LAYOUT_MODERN = 2;
+    static final int LAYOUT_LARGE = 3;
+
+    /** The layout resource a disposition renders with. */
+    static int layoutRes(int layout) {
+        switch (layout) {
+            case LAYOUT_COMPACT: return R.layout.widget_divia_compact;
+            case LAYOUT_MODERN: return R.layout.widget_divia_modern;
+            case LAYOUT_LARGE: return R.layout.widget_divia_large;
+            default: return R.layout.widget_divia;
+        }
+    }
 
     static void safeRenderPlaceholder(Context c, AppWidgetManager awm, int id) {
         try {
@@ -364,21 +567,23 @@ public final class RefreshLogic {
                        WidgetPrefs.Config cfg, Catalog cat, List<Departure> deps,
                        long nowMs, boolean offline) {
 
-        // v1.5.0/v1.6.0: layout variant — compact widgets get the dense
-        // "line badge + minutes" layout, modern ones the row-card layout,
-        // detailed ones the full layout. Colors always come from the XML
-        // defaults, so the launcher's day/night resource switching stays
-        // intact in every disposition.
+        // v1.5.0/v1.6.0/v1.7.0: layout variant — compact widgets get the
+        // dense "line badge + minutes" layout, modern ones the row-card
+        // layout, large ones the big-text detailed layout, detailed ones
+        // the full layout. Colors always come from the XML defaults, so
+        // the launcher's day/night resource switching stays intact in
+        // every disposition.
         int layout = WidgetPrefs.layoutVariant(cfg);
         boolean compact = layout == LAYOUT_COMPACT;
         boolean modern = layout == LAYOUT_MODERN;
-        RemoteViews rv = new RemoteViews(context.getPackageName(),
-                compact ? R.layout.widget_divia_compact
-                        : modern ? R.layout.widget_divia_modern
-                                 : R.layout.widget_divia);
+        RemoteViews rv = new RemoteViews(context.getPackageName(), layoutRes(layout));
 
         String stopName = cat != null ? cat.stopName(cfg.stopId) : cfg.stopId;
         boolean commute = cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty();
+        // v1.7.0: the large disposition lays out like the detailed one
+        // (destination + clock rows), just bigger — it runs the same
+        // render branch below.
+        boolean likeDetailed = !compact && !modern;
 
         Catalog.Route route = cat != null ? cat.routes.get(cfg.routeId) : null;
 
@@ -449,6 +654,17 @@ public final class RefreshLogic {
 
             if (d != null) {
                 boolean late = d.delaySec >= LATE_MIN_SEC;
+                // v1.7.0: a vehicle running EARLY by the same threshold gets
+                // a green countdown and a "-2'" marker on the clock — the
+                // mirror image of the amber late state. (Unknown delay is
+                // Integer.MIN_VALUE: not early, and the late check already
+                // rejects it.)
+                boolean early = d.delaySec != Integer.MIN_VALUE
+                        && d.delaySec <= -LATE_MIN_SEC;
+                // v1.7.0: "à 1 arrêt" — the serving vehicle sits at (or has
+                // just left) the stop right before ours, per the
+                // vehicle-positions feed.
+                boolean oneStop = d.stopsAway == 1;
                 // v1.5.0: "dernier" tag — this is the last known live
                 // departure of its side AND its time sits on the static
                 // timetable's last slot for that stop.
@@ -476,13 +692,22 @@ public final class RefreshLogic {
                     rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
                     rv.setTextColor(COUNT_IDS[i], late
                             ? context.getResources().getColor(R.color.late)
+                            : early
+                            ? context.getResources().getColor(R.color.early)
                             : context.getResources().getColor(R.color.countdown));
-                    // destN carries ONLY the "dernier" tag in compact.
+                    // destN carries ONLY the row tags in compact.
+                    String tags = oneStop
+                            ? context.getString(R.string.one_stop) : "";
                     if (dernier) {
-                        rv.setTextViewText(DEST_IDS[i], context.getString(R.string.dernier_tag));
-                        rv.setViewVisibility(DEST_IDS[i], android.view.View.VISIBLE);
-                    } else {
+                        tags = tags.isEmpty()
+                                ? context.getString(R.string.dernier_tag)
+                                : tags + " · " + context.getString(R.string.dernier_tag);
+                    }
+                    if (tags.isEmpty()) {
                         rv.setViewVisibility(DEST_IDS[i], android.view.View.GONE);
+                    } else {
+                        rv.setTextViewText(DEST_IDS[i], tags);
+                        rv.setViewVisibility(DEST_IDS[i], android.view.View.VISIBLE);
                     }
                 } else if (modern) {
                     // Modern row: soft card — line badge pill, destination,
@@ -492,6 +717,9 @@ public final class RefreshLogic {
                             rr != null ? rr.shortName : d.lineShort,
                             rr != null ? rr.colorHex : null, true);
                     String destM = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
+                    if (oneStop) {
+                        destM = destM + " · " + context.getString(R.string.one_stop);
+                    }
                     if (dernier) {
                         destM = destM + " · " + context.getString(R.string.dernier_tag);
                     }
@@ -499,27 +727,37 @@ public final class RefreshLogic {
                     rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
                     String clockM = formatClock(context, d.timeSec * 1000L);
                     if (late) clockM = clockM + " · " + lateMarker(context, d.delaySec);
+                    else if (early) clockM = clockM + " · " + earlyMarker(context, d.delaySec);
                     rv.setTextViewText(CLOCK_IDS[i], clockM);
                     rv.setTextColor(COUNT_IDS[i], late
                             ? context.getResources().getColor(R.color.late)
+                            : early
+                            ? context.getResources().getColor(R.color.early)
                             : context.getResources().getColor(R.color.countdown));
                 } else {
-                    // Detailed row: destination, minutes, clock.
+                    // Detailed / large row: destination, minutes, clock.
                     String dest = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
+                    if (oneStop) {
+                        dest = dest + " · " + context.getString(R.string.one_stop);
+                    }
                     if (dernier) {
                         dest = dest + " · " + context.getString(R.string.dernier_tag);
                     }
                     rv.setTextViewText(DEST_IDS[i], dest);
                     rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
-                    // Lateness: the times shown are already the live prediction,
-                    // so a delay is baked into them; the "+N'" marker and the
-                    // amber countdown make the deviation from the timetable
+                    // Lateness / earliness: the times shown are already the
+                    // live prediction, so a delay is baked into them; the
+                    // "+N'" / "-N'" markers and the amber / green
+                    // countdowns make the deviation from the timetable
                     // visible on top of that.
                     String clockText = formatClock(context, d.timeSec * 1000L);
                     if (late) clockText = clockText + " · " + lateMarker(context, d.delaySec);
+                    else if (early) clockText = clockText + " · " + earlyMarker(context, d.delaySec);
                     rv.setTextViewText(CLOCK_IDS[i], clockText);
                     rv.setTextColor(COUNT_IDS[i], late
                             ? context.getResources().getColor(R.color.late)
+                            : early
+                            ? context.getResources().getColor(R.color.early)
                             : context.getResources().getColor(R.color.countdown));
                 }
                 rv.setViewVisibility(ROW_IDS[i], android.view.View.VISIBLE);
@@ -586,6 +824,79 @@ public final class RefreshLogic {
         rv.setOnClickPendingIntent(R.id.widget_root, pi);
 
         awm.updateAppWidget(id, rv);
+    }
+
+    // ----------------------------------------------------- v1.7.0 previews
+
+    /**
+     * A widget RemoteViews filled with SAMPLE data, for the disposition
+     * picker's live previews (RemoteViews.apply() inflates it in the app's
+     * own process — no launcher involved). Two rows are enough to tell the
+     * dispositions apart; rows 2-4 are hidden to keep the preview compact.
+     */
+    public static RemoteViews previewViews(Context c, Catalog cat, int layout) {
+        RemoteViews rv = new RemoteViews(c.getPackageName(), layoutRes(layout));
+        boolean compact = layout == LAYOUT_COMPACT;
+        boolean modern = layout == LAYOUT_MODERN;
+        // A real line badge in the line's official color when the catalog
+        // knows the line, else the default pill.
+        String badgeText = "T2";
+        String badgeColor = null;
+        if (cat != null) {
+            for (Catalog.Route r : cat.routes.values()) {
+                if ("T2".equals(r.shortName)) {
+                    badgeColor = r.colorHex;
+                    break;
+                }
+            }
+        }
+        try {
+            android.graphics.Bitmap bm = modern
+                    ? BadgeRender.makeModern(c, badgeText, badgeColor)
+                    : compact ? BadgeRender.makeCompact(c, badgeText, badgeColor)
+                              : BadgeRender.make(c, badgeText, badgeColor);
+            if (bm != null) rv.setImageViewBitmap(R.id.line_badge, bm);
+        } catch (Throwable ignored) {
+        }
+        rv.setTextViewText(R.id.stop_name, "Valmy");
+        if (!compact) {
+            rv.setTextViewText(R.id.line_dest,
+                    c.getString(R.string.direction_fmt, "Université"));
+        }
+        String[] dests = {"Université", "Chenôve Centre"};
+        String[] counts = {"9 min", "14 min"};
+        String[] clocks = {"11:57", "12:02"};
+        for (int i = 0; i < 5; i++) {
+            if (i < 2) {
+                if (compact) {
+                    try {
+                        android.graphics.Bitmap bm = BadgeRender.makeCompact(c, badgeText, badgeColor);
+                        if (bm != null) rv.setImageViewBitmap(CBADGE_IDS[i], bm);
+                    } catch (Throwable ignored) {
+                    }
+                    rv.setTextViewText(DEST_IDS[i], c.getString(R.string.dernier_tag));
+                    rv.setViewVisibility(DEST_IDS[i], android.view.View.VISIBLE);
+                } else if (modern) {
+                    try {
+                        android.graphics.Bitmap bm = BadgeRender.makeModern(c, badgeText, badgeColor);
+                        if (bm != null) rv.setImageViewBitmap(CBADGE_IDS[i], bm);
+                    } catch (Throwable ignored) {
+                    }
+                    rv.setTextViewText(DEST_IDS[i],
+                            "Université · " + c.getString(R.string.one_stop));
+                } else {
+                    rv.setTextViewText(DEST_IDS[i], "Université · Valmy");
+                }
+                rv.setTextViewText(COUNT_IDS[i], counts[i]);
+                if (!compact) rv.setTextViewText(CLOCK_IDS[i], clocks[i]);
+                rv.setViewVisibility(ROW_IDS[i], android.view.View.VISIBLE);
+            } else {
+                rv.setViewVisibility(ROW_IDS[i], android.view.View.GONE);
+            }
+        }
+        rv.setViewVisibility(R.id.empty_status, android.view.View.GONE);
+        rv.setTextViewText(R.id.updated, c.getString(R.string.updated_fmt, "11:56"));
+        return rv;
     }
 
     // ---------------------------------------------------------------- helpers
@@ -672,12 +983,52 @@ public final class RefreshLogic {
     }
 
     /**
+     * v1.7.0: the short names of every line the user actually rides —
+     * the lines of their widgets (line mode: the line; stop mode: every
+     * line at the stop) and of their pending alerts. Null-ish (empty)
+     * when nothing is configured, in which case the info-trafic filter
+     * stands down and every disruption post notifies (previous
+     * behavior). Never throws.
+     */
+    static HashSet<String> userLines(Context c, List<Integer> ids, Catalog cat) {
+        HashSet<String> out = new HashSet<String>(16);
+        try {
+            for (int i = 0; i < ids.size(); i++) {
+                int id = ids.get(i);
+                WidgetPrefs.Config cfg = WidgetPrefs.load(c, id);
+                if (cfg == null || cfg.stopId.isEmpty()) continue;
+                if (cfg.lineMode && cat != null) {
+                    Catalog.Route r = cat.routes.get(cfg.routeId);
+                    if (r != null && !r.shortName.isEmpty()) out.add(r.shortName);
+                } else if (cat != null) {
+                    for (String s : cat.stopLinesLabelAny(cfg.stopId).split(", ")) {
+                        if (!s.isEmpty()) out.add(s);
+                    }
+                }
+                // The pending time-to-leave alert rides on this widget's own
+                // filter, but its pinned line may differ in edge cases —
+                // count it too. (Recurring rules reuse the widget filter,
+                // so its lines are already covered above.)
+                WidgetPrefs.Alert a = WidgetPrefs.getAlert(c, id);
+                if (a != null && a.line != null && !a.line.isEmpty()) {
+                    out.add(a.line);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    /**
      * Polls the info-trafic RSS at most every 30 minutes, and notifies the
      * DISRUPTION posts published since the last check (strikes, demos,
-     * replaced trams…), never promo posts. On the very first run the
-     * backlog is silently marked as seen.
+     * replaced trams…), never promo posts. v1.7.0: when userLines is
+     * non-empty, posts that name specific lines none of which the user
+     * rides are skipped (network-wide posts without a line reference still
+     * notify). On the very first run the backlog is silently marked as
+     * seen.
      */
-    static void maybeCheckTraffic(Context c) {
+    static void maybeCheckTraffic(Context c, HashSet<String> userLines) {
         try {
             // Test seam: the JVM harness installs a canned feed to stay
             // deterministic (and offline-proof); skip the RSS poll there.
@@ -687,6 +1038,7 @@ public final class RefreshLogic {
             if (now - WidgetPrefs.getTrafficLastCheck(c) < TRAFFIC_CHECK_MS) return;
             WidgetPrefs.setTrafficLastCheck(c, now);
 
+            Catalog cat = catalogQuiet(c);
             List<TrafficFeed.Item> items = TrafficFeed.fetch(6000);
             if (items.isEmpty()) return;
 
@@ -697,6 +1049,10 @@ public final class RefreshLogic {
                 if (it.pubDateMs > newest) newest = it.pubDateMs;
                 if (it.pubDateMs <= lastTs || it.pubDateMs < now - TRAFFIC_FRESH_MS) continue;
                 if (!TrafficFeed.isDisruption(it)) continue;
+                if (userLines != null && !userLines.isEmpty() && cat != null
+                        && !TrafficFeed.concernsUser(it, userLines, lineShorts(cat))) {
+                    continue;
+                }
                 if (notified++ >= TRAFFIC_MAX_NOTIFY) break;
                 Notifier.postTraffic(c, it.title, it.link);
             }
@@ -704,6 +1060,15 @@ public final class RefreshLogic {
         } catch (Throwable t) {
             WidgetPrefs.setLastError(c, "traffic: " + t);
         }
+    }
+
+    /** The catalog's line short names, for the traffic filter's matcher. */
+    static java.util.ArrayList<String> lineShorts(Catalog cat) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<String>(cat.routes.size());
+        for (Catalog.Route r : cat.routes.values()) {
+            if (!r.shortName.isEmpty()) out.add(r.shortName);
+        }
+        return out;
     }
 
     /** The ids to operate on: the given subset, or every bound widget id. */
@@ -734,6 +1099,16 @@ public final class RefreshLogic {
                     Integer.valueOf(delaySec / 3600), Integer.valueOf((delaySec % 3600 + 30) / 60));
         }
         return c.getString(R.string.late_min_fmt, Integer.valueOf((delaySec + 30) / 60));
+    }
+
+    /** v1.7.0: mirror marker for an EARLY vehicle: "-2'" / "-0h30". */
+    static String earlyMarker(Context c, int delaySec) {
+        int ahead = -delaySec;
+        if (ahead >= 3600) {
+            return c.getString(R.string.early_hour_fmt,
+                    Integer.valueOf(ahead / 3600), Integer.valueOf((ahead % 3600 + 30) / 60));
+        }
+        return c.getString(R.string.early_min_fmt, Integer.valueOf((ahead + 30) / 60));
     }
 
     static String formatClock(Context c, long ms) {

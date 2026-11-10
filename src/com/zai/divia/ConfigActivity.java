@@ -8,6 +8,11 @@ package com.zai.divia;
 import android.app.Activity;
 import android.appwidget.AppWidgetManager;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.Editable;
@@ -24,12 +29,14 @@ import android.widget.ListView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.zai.divia.core.Catalog;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Line / direction / stop picker — v2.1 slimmed down to a pure
@@ -47,9 +54,20 @@ public class ConfigActivity extends Activity {
     private static final int STATE_DIRS = 1;
     private static final int STATE_LINE_STOPS = 2;
     private static final int STATE_ALL_STOPS = 3;
+    /** v1.7.0: location-based stop picker — one of the three picker modes. */
+    private static final int STATE_NEARBY = 4;
 
     /** Extra: jump straight into picking the RETURN-direction stop. */
     public static final String EXTRA_PICK_RETURN = "pickReturn";
+
+    /** Runtime request code for the nearby picker's location permission. */
+    private static final int REQ_NEARBY = 4201;
+    /** A last-known fix older than this is ignored in favor of a fresh one. */
+    private static final long NEARBY_FIX_TTL_MS = 10L * 60L * 1000L;
+    /** Budget for the one-shot fresh fix. */
+    private static final long NEARBY_LOCATE_MS = 8000L;
+    /** How many nearby stops the picker lists. */
+    private static final int NEARBY_MAX = 20;
 
     private int appWidgetId = -1;          // widget being configured (or edited)
 
@@ -71,11 +89,20 @@ public class ConfigActivity extends Activity {
     private RadioGroup modeGroup;
     private RadioButton modeLineBtn;
     private RadioButton modeStopBtn;
+    private RadioButton modeNearbyBtn;
     private EditText search;
     private ImageView backBtn;   // v1.6.0: circular icon button in the header
     private ListView list;
 
     private final Handler handler = new Handler();
+
+    /** v1.7.0 nearby picker: the live one-shot location request, its
+     *  timeout callback, and the last fix the list was built from. */
+    private LocationListener locateListener;
+    private Location lastFix;
+    /** Guards programmatic RadioButton changes from re-triggering the
+     *  mode-switch handler (permission-denied revert). */
+    private boolean suppressModeSwitch;
 
     private final List<Entry> entries = new ArrayList<Entry>();
     private final EntryAdapter adapter = new EntryAdapter();
@@ -99,6 +126,7 @@ public class ConfigActivity extends Activity {
         modeGroup = (RadioGroup) findViewById(R.id.mode_group);
         modeLineBtn = (RadioButton) findViewById(R.id.mode_line_btn);
         modeStopBtn = (RadioButton) findViewById(R.id.mode_stop_btn);
+        modeNearbyBtn = (RadioButton) findViewById(R.id.mode_nearby_btn);
         search = (EditText) findViewById(R.id.search);
         backBtn = (ImageView) findViewById(R.id.back_btn);
         list = (ListView) findViewById(R.id.list);
@@ -118,9 +146,15 @@ public class ConfigActivity extends Activity {
 
         modeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (suppressModeSwitch) return;
                 // Switching mode cancels the return-picker shortcut.
                 pickingReturn = false;
                 returnFromWizard = false;
+                if (checkedId == R.id.mode_nearby_btn) {
+                    enterNearbyMode();
+                    return;
+                }
+                stopLocating();
                 lineMode = checkedId == R.id.mode_line_btn;
                 state = lineMode ? STATE_LINES : STATE_ALL_STOPS;
                 selectedRoute = null;
@@ -264,7 +298,9 @@ public class ConfigActivity extends Activity {
                 }
                 break;
             }
-            case STATE_ALL_STOPS: {
+            case STATE_ALL_STOPS:
+            case STATE_NEARBY: {
+                // Both stop pickers produce a plain whole-stop widget.
                 saveWidget(null, 0, e.stopId, false);
                 break;
             }
@@ -349,7 +385,8 @@ public class ConfigActivity extends Activity {
     // ---------------------------------------------------------------- state
 
     private void applyState() {
-        search.setVisibility(state != STATE_DIRS ? View.VISIBLE : View.GONE);
+        search.setVisibility(state != STATE_DIRS && state != STATE_NEARBY
+                ? View.VISIBLE : View.GONE);
         backBtn.setVisibility(state == STATE_LINE_STOPS || state == STATE_DIRS
                 ? View.VISIBLE : View.GONE);
         list.setVisibility(View.VISIBLE);
@@ -373,6 +410,9 @@ public class ConfigActivity extends Activity {
                 break;
             case STATE_ALL_STOPS:
                 subtitle.setText(R.string.step_all_stops);
+                break;
+            case STATE_NEARBY:
+                subtitle.setText(R.string.step_nearby);
                 break;
         }
         rebuild();
@@ -458,6 +498,39 @@ public class ConfigActivity extends Activity {
                 }
                 break;
             }
+            case STATE_NEARBY: {
+                // v1.7.0: nearest physical stops from the last fix.
+                if (lastFix == null) {
+                    Entry e = new Entry();
+                    e.title = getString(R.string.nearby_locating);
+                    e.subtitle = getString(R.string.loading);
+                    entries.add(e);
+                    break;
+                }
+                if (catalog == null) break;
+                if (catalog.stopPos.isEmpty()) {
+                    // Catalogue too old to know stop coordinates.
+                    Entry e = new Entry();
+                    e.badge = "•";
+                    e.title = getString(R.string.nearby_no_coords);
+                    entries.add(e);
+                    break;
+                }
+                List<Catalog.NearStop> near = catalog.nearestStops(
+                        lastFix.getLatitude(), lastFix.getLongitude(), NEARBY_MAX);
+                for (Catalog.NearStop ns : near) {
+                    Entry e = new Entry();
+                    String lines = catalog.stopLinesLabelAny(ns.stopId);
+                    String[] ll = lines.isEmpty() ? new String[0] : lines.split(", ");
+                    e.badge = ll.length > 0 ? ll[0] : "•";
+                    e.title = ns.name;
+                    e.subtitle = getString(R.string.nearby_fmt, fmtDist(ns.meters))
+                            + (lines.isEmpty() ? "" : " · " + lines);
+                    e.stopId = ns.stopId;
+                    entries.add(e);
+                }
+                break;
+            }
         }
         adapter.notifyDataSetChanged();
     }
@@ -466,6 +539,168 @@ public class ConfigActivity extends Activity {
         if (q.isEmpty()) return true;
         return e.title.toLowerCase().contains(q) || e.subtitle.toLowerCase().contains(q)
                 || e.badge.toLowerCase().contains(q);
+    }
+
+    // ------------------------------------------------- v1.7.0 nearby picker
+
+    /** Switches to the location-based picker, asking for the permission
+     *  first on Android 6+ (it is only ever needed for THIS mode — the
+     *  rest of the app runs without it). */
+    private void enterNearbyMode() {
+        pickingReturn = false;
+        returnFromWizard = false;
+        selectedRoute = null;
+        lineMode = false;
+        state = STATE_NEARBY;
+        search.setText("");
+        if (!hasLocationPermission()) {
+            if (Build.VERSION.SDK_INT >= 23) {
+                requestPermissions(new String[]{
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION},
+                        REQ_NEARBY);
+                applyState();   // shows "locating…" while the dialog is up
+                return;
+            }
+            nearbyFailed();
+            return;
+        }
+        locate();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        if (requestCode != REQ_NEARBY) return;
+        boolean granted = false;
+        for (int r : grantResults) if (r == PackageManager.PERMISSION_GRANTED) granted = true;
+        if (granted) {
+            locate();
+            return;
+        }
+        Toast.makeText(this, R.string.nearby_denied, Toast.LENGTH_LONG).show();
+        // Back to the plain stop picker.
+        suppressModeSwitch = true;
+        try {
+            modeStopBtn.setChecked(true);
+        } finally {
+            suppressModeSwitch = false;
+        }
+        state = STATE_ALL_STOPS;
+        applyState();
+    }
+
+    private boolean hasLocationPermission() {
+        if (Build.VERSION.SDK_INT < 23) return true;   // install-time grant
+        try {
+            return checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * One-shot location: a fresh-enough last-known fix wins immediately;
+     * otherwise a single GPS + network request with an 8 s budget. The
+     * widgets themselves NEVER use location — only this picker does.
+     */
+    @SuppressWarnings({"MissingPermission"})
+    private void locate() {
+        applyState();   // "Localisation en cours…"
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (lm == null) {
+            nearbyFailed();
+            return;
+        }
+        Location best = null;
+        for (String prov : new String[]{"passive", "network", "gps"}) {
+            try {
+                Location l = lm.getLastKnownLocation(prov);
+                if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
+            } catch (Throwable ignored) {
+            }
+        }
+        if (best != null
+                && System.currentTimeMillis() - best.getTime() < NEARBY_FIX_TTL_MS) {
+            lastFix = best;
+            applyState();
+            return;
+        }
+        stopLocating();
+        locateListener = new LocationListener() {
+            public void onLocationChanged(Location l) {
+                stopLocating();
+                lastFix = l;
+                if (state == STATE_NEARBY) applyState();
+            }
+
+            public void onStatusChanged(String p, int s, Bundle e) {}
+
+            public void onProviderEnabled(String p) {}
+
+            public void onProviderDisabled(String p) {}
+        };
+        boolean requested = false;
+        for (String prov : new String[]{LocationManager.NETWORK_PROVIDER,
+                LocationManager.GPS_PROVIDER}) {
+            try {
+                lm.requestLocationUpdates(prov, 0, 0, locateListener);
+                requested = true;
+            } catch (Throwable ignored) {
+                // provider off / no permission fallback
+            }
+        }
+        if (!requested) {
+            nearbyFailed();
+            return;
+        }
+        handler.postDelayed(new Runnable() {
+            public void run() {
+                if (locateListener != null) {
+                    stopLocating();
+                    if (state == STATE_NEARBY) nearbyFailed();
+                }
+            }
+        }, NEARBY_LOCATE_MS);
+    }
+
+    /** Ends the one-shot request and its timeout (idempotent). */
+    private void stopLocating() {
+        if (locateListener != null) {
+            try {
+                LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+                if (lm != null) lm.removeUpdates(locateListener);
+            } catch (Throwable ignored) {
+            }
+            locateListener = null;
+        }
+    }
+
+    /** No fix obtainable: tell the user and fall back to the stop search. */
+    private void nearbyFailed() {
+        if (state == STATE_NEARBY) {
+            entries.clear();
+            Entry e = new Entry();
+            e.badge = "•";
+            e.title = getString(R.string.nearby_no_fix);
+            entries.add(e);
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    /** "350 m" / "1,2 km". */
+    static String fmtDist(int meters) {
+        if (meters < 1000) return meters + " m";
+        return String.format(Locale.getDefault(), "%.1f km", meters / 1000.0);
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopLocating();
+        super.onDestroy();
     }
 
     // -------------------------------------------------------------- adapter
