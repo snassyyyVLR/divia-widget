@@ -15,6 +15,16 @@ public class NotificationManager {
         if (n != null) posted.add(new Object[]{Integer.valueOf(id), n});
     }
 
+    /** v1.6.1: cancelUpdateTapToInstall (ROM-blocked-session fallback). */
+    public void cancel(int id) {
+        for (java.util.Iterator<Object[]> it = posted.iterator(); it.hasNext(); ) {
+            Object[] entry = it.next();
+            if (entry[0] instanceof Integer && ((Integer) entry[0]).intValue() == id) {
+                it.remove();
+            }
+        }
+    }
+
     public void createNotificationChannel(NotificationChannel c) {
         if (c != null) channels.add(c.id);
     }

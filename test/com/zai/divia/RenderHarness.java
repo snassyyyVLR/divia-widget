@@ -685,6 +685,58 @@ public final class RenderHarness {
                 check(colors43.containsKey(R.id.count0) && colors43.containsKey(R.id.count1),
                         "layout: compact minutes keep the countdown/late coloring");
             }
+
+            // v1.6.0: MODERN disposition — soft row cards.
+            awm.clearUpdates();
+            WidgetPrefs.Config cfgModern = new WidgetPrefs.Config();
+            cfgModern.lineMode = true;
+            cfgModern.routeId = t2Id;
+            cfgModern.dir = dirT2;
+            cfgModern.stopId = valmyId;
+            cfgModern.lastOk = now;
+            cfgModern.layout = 2;
+            RefreshLogic.render(ctx, awm, 44, cfgModern, cat, two, noonMs, false);
+            if (awm.updates.size() == 1) {
+                RemoteViews rv44 = (RemoteViews) awm.updates.get(0)[1];
+                check(rv44.layoutId == R.layout.widget_divia_modern,
+                        "layout: modern disposition uses widget_divia_modern.xml");
+                Map<Integer, android.graphics.Bitmap> badges44 = bitmapByView(rv44);
+                check(badges44.get(R.id.cbadge0) != null && badges44.get(R.id.cbadge1) != null,
+                        "layout: modern rows carry per-row line badges");
+                if (badges44.get(R.id.cbadge0) != null) {
+                    check(badges44.get(R.id.cbadge0).drawnTexts.contains("T2"),
+                            "layout: modern row badge drawn 'T2'");
+                }
+                Map<Integer, Object> texts44 = textsByView(rv44);
+                check(texts44.containsKey(R.id.line_dest),
+                        "layout: modern pushes the line_dest subtitle");
+                check(texts44.containsKey(R.id.clock0) && texts44.containsKey(R.id.clock1),
+                        "layout: modern rows carry the small clock");
+                check(!texts44.containsKey(R.id.dest2),
+                        "layout: modern hides empty rows (no dest2 text for 2 deps)");
+                check(String.valueOf(texts44.get(R.id.dest1)).endsWith("dernier"),
+                        "layout: modern dernier tag rides the destination text");
+                Map<Integer, Integer> colors44 = colorsByView(rv44);
+                check(colors44.containsKey(R.id.count0) && colors44.containsKey(R.id.count1),
+                        "layout: modern minutes keep the countdown/late coloring");
+            }
+
+            // v1.6.0: legacy migration — a config stored by 1.5.0 (compact
+            // boolean only, no layout int) still resolves to the compact
+            // layout; the modern int wins when both are present.
+            WidgetPrefs.Config legacy = new WidgetPrefs.Config();
+            legacy.lineMode = true;
+            check(WidgetPrefs.layoutVariant(legacy) == 0,
+                    "layoutVariant: fresh config defaults to detailed");
+            legacy.compact = true;
+            check(WidgetPrefs.layoutVariant(legacy) == 1,
+                    "layoutVariant: legacy compact=true resolves to compact");
+            legacy.layout = 2;
+            check(WidgetPrefs.layoutVariant(legacy) == 2,
+                    "layoutVariant: explicit layout int wins over legacy boolean");
+            legacy.layout = 3;
+            check(WidgetPrefs.layoutVariant(legacy) == 1,
+                    "layoutVariant: out-of-range int falls back to the legacy boolean");
         }
 
         // v1.5.0: catalog expiry notification.

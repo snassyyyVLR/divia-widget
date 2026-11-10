@@ -64,6 +64,18 @@ public final class LayoutWhitelist {
             "count0", "count1", "count2", "count3", "count4",
             "empty_status", "updated"));
 
+    /** v1.6.0: ids the MODERN layout must declare — the detailed set plus
+     * the compact layout's per-row badges cbadgeN (badge pill + dest +
+     * big minutes + small clock inside each row card). */
+    static final Set<String> NEEDED_IDS_MODERN = new LinkedHashSet<String>(Arrays.asList(
+            "widget_root", "line_badge", "stop_name", "line_dest",
+            "row0", "row1", "row2", "row3", "row4",
+            "cbadge0", "cbadge1", "cbadge2", "cbadge3", "cbadge4",
+            "dest0", "dest1", "dest2", "dest3", "dest4",
+            "count0", "count1", "count2", "count3", "count4",
+            "clock0", "clock1", "clock2", "clock3", "clock4",
+            "empty_status", "updated"));
+
     public static void main(String[] args) throws Exception {
         System.out.println("[widget layout whitelist]");
 
@@ -83,6 +95,16 @@ public final class LayoutWhitelist {
                         "cbadge0", "cbadge1", "cbadge2", "cbadge3", "cbadge4",
                         "dest0", "dest1", "dest2", "dest3", "dest4",
                         "count0", "count1", "count2", "count3", "count4")));
+
+        System.out.println("[widget layout whitelist — modern variant]");
+        checkLayout("res/layout/widget_divia_modern.xml",
+                "modern", NEEDED_IDS_MODERN, "row|dest|count|clock|cbadge",
+                new HashSet<String>(Arrays.asList(
+                        "row0", "row1", "row2", "row3", "row4",
+                        "cbadge0", "cbadge1", "cbadge2", "cbadge3", "cbadge4",
+                        "dest0", "dest1", "dest2", "dest3", "dest4",
+                        "count0", "count1", "count2", "count3", "count4",
+                        "clock0", "clock1", "clock2", "clock3", "clock4")));
         if (declaredDetailed == null) return; // parse already failed loudly
 
         System.out.println("[widget provider info]");

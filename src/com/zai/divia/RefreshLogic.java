@@ -306,9 +306,15 @@ public final class RefreshLogic {
     // disposition 0 (detailed) = widget_divia.xml, the full layout with
     // destination + clock per row; disposition 1 (compact) =
     // widget_divia_compact.xml, "line badge + minutes only" on denser
-    // 20dp rows. Both layouts share every view id except the compact
-    // per-row badges (cbadge0..4), so launchers re-applying cached
+    // rows. v1.6.0 adds disposition 2 (modern) = widget_divia_modern.xml:
+    // rows as soft cards, per-row line badge pills, big minutes. All
+    // layouts share every view id except the per-row badges (cbadge0..4,
+    // declared by compact and modern), so launchers re-applying cached
     // RemoteViews keep resolving after an in-place update either way.
+
+    static final int LAYOUT_DETAILED = 0;
+    static final int LAYOUT_COMPACT = 1;
+    static final int LAYOUT_MODERN = 2;
 
     static void safeRenderPlaceholder(Context c, AppWidgetManager awm, int id) {
         try {
@@ -358,13 +364,18 @@ public final class RefreshLogic {
                        WidgetPrefs.Config cfg, Catalog cat, List<Departure> deps,
                        long nowMs, boolean offline) {
 
-        // v1.5.0: layout variant — compact widgets get the dense "line
-        // badge + minutes" layout, detailed ones the full layout. Colors
-        // always come from the XML defaults, so the launcher's day/night
-        // resource switching stays intact in both dispositions.
-        boolean compact = cfg.compact;
+        // v1.5.0/v1.6.0: layout variant — compact widgets get the dense
+        // "line badge + minutes" layout, modern ones the row-card layout,
+        // detailed ones the full layout. Colors always come from the XML
+        // defaults, so the launcher's day/night resource switching stays
+        // intact in every disposition.
+        int layout = WidgetPrefs.layoutVariant(cfg);
+        boolean compact = layout == LAYOUT_COMPACT;
+        boolean modern = layout == LAYOUT_MODERN;
         RemoteViews rv = new RemoteViews(context.getPackageName(),
-                compact ? R.layout.widget_divia_compact : R.layout.widget_divia);
+                compact ? R.layout.widget_divia_compact
+                        : modern ? R.layout.widget_divia_modern
+                                 : R.layout.widget_divia);
 
         String stopName = cat != null ? cat.stopName(cfg.stopId) : cfg.stopId;
         boolean commute = cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty();
@@ -407,7 +418,6 @@ public final class RefreshLogic {
         }
         rv.setTextViewText(R.id.stop_name, stopName);
         if (!compact) rv.setTextViewText(R.id.line_dest, subLine);
-
         // ---- rows (split between the two directions in commute mode).
         int rows = effRows(cfg);
         int rowsA = commute ? (rows + 1) / 2 : rows;
@@ -458,11 +468,11 @@ public final class RefreshLogic {
                         && lastStaticMatch(secOfDay(d.timeSec), staticLast);
 
                 if (compact) {
-                    // Compact row: per-row line badge + minutes countdown.
+                    // Compact row: per-row line badge + right-aligned minutes.
                     Catalog.Route rr = cat != null ? cat.routes.get(d.routeId) : null;
                     setRowBadge(rv, context, CBADGE_IDS[i],
                             rr != null ? rr.shortName : d.lineShort,
-                            rr != null ? rr.colorHex : null);
+                            rr != null ? rr.colorHex : null, false);
                     rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
                     rv.setTextColor(COUNT_IDS[i], late
                             ? context.getResources().getColor(R.color.late)
@@ -474,6 +484,25 @@ public final class RefreshLogic {
                     } else {
                         rv.setViewVisibility(DEST_IDS[i], android.view.View.GONE);
                     }
+                } else if (modern) {
+                    // Modern row: soft card — line badge pill, destination,
+                    // big minutes, small clock (like detailed, card-styled).
+                    Catalog.Route rr = cat != null ? cat.routes.get(d.routeId) : null;
+                    setRowBadge(rv, context, CBADGE_IDS[i],
+                            rr != null ? rr.shortName : d.lineShort,
+                            rr != null ? rr.colorHex : null, true);
+                    String destM = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
+                    if (dernier) {
+                        destM = destM + " · " + context.getString(R.string.dernier_tag);
+                    }
+                    rv.setTextViewText(DEST_IDS[i], destM);
+                    rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
+                    String clockM = formatClock(context, d.timeSec * 1000L);
+                    if (late) clockM = clockM + " · " + lateMarker(context, d.delaySec);
+                    rv.setTextViewText(CLOCK_IDS[i], clockM);
+                    rv.setTextColor(COUNT_IDS[i], late
+                            ? context.getResources().getColor(R.color.late)
+                            : context.getResources().getColor(R.color.countdown));
                 } else {
                     // Detailed row: destination, minutes, clock.
                     String dest = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
@@ -619,10 +648,13 @@ public final class RefreshLogic {
         }
     }
 
-    /** v1.5.0: per-row badge of the compact layout (smaller pill). */
-    private static void setRowBadge(RemoteViews rv, Context c, int viewId, String text, String colorHex) {
+    /** v1.5.0/v1.6.0: per-row badge of the compact/modern layouts (pill). */
+    private static void setRowBadge(RemoteViews rv, Context c, int viewId, String text,
+                                    String colorHex, boolean modern) {
         try {
-            android.graphics.Bitmap bm = BadgeRender.makeCompact(c, text, colorHex);
+            android.graphics.Bitmap bm = modern
+                    ? BadgeRender.makeModern(c, text, colorHex)
+                    : BadgeRender.makeCompact(c, text, colorHex);
             if (bm != null) rv.setImageViewBitmap(viewId, bm);
         } catch (Throwable t) {
             WidgetPrefs.setLastError(c, "row-badge: " + t);

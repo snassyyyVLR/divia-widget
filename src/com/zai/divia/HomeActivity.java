@@ -66,6 +66,7 @@ public class HomeActivity extends Activity {
         String badge = "";
         String title = "";
         String subtitle = "";
+        String colorHex = null;   // v1.6.0: line color for the badge pill
     }
 
     @Override
@@ -198,6 +199,7 @@ public class HomeActivity extends Activity {
                 Catalog.Route route = catalog.routes.get(cfg.routeId);
                 r.badge = cfg.lineMode && route != null ? route.shortName : "•";
                 r.title = catalog.stopName(cfg.stopId);
+                if (route != null) r.colorHex = route.colorHex;
                 String sub;
                 if (cfg.lineMode) {
                     sub = getString(R.string.direction_fmt, catalog.dirLabel(cfg.routeId, cfg.dir));
@@ -399,17 +401,20 @@ public class HomeActivity extends Activity {
     }
 
     /**
-     * v1.5.0: layout-variant chooser (replaces the rejected color themes).
-     * Détaillée = destination + clock on 24dp rows; Compacte = line badge
-     * + minutes only on denser 20dp rows. Colors stay automatic (the
-     * launcher's day/night switching) in both dispositions.
+     * v1.5.0/v1.6.0: layout-variant chooser (replaces the rejected color
+     * themes). Détaillée = destination + clock on 24dp rows; Compacte =
+     * line badge + minutes only, denser rows; Moderne = soft row cards
+     * with badge pills and big minutes. Colors stay automatic (the
+     * launcher's day/night switching) in all three dispositions.
      */
     private void chooseLayout(final int wid, final WidgetPrefs.Config cfg) {
         String[] labels = {
                 getString(R.string.layout_detailed),
                 getString(R.string.layout_compact),
+                getString(R.string.layout_modern),
         };
-        int checked = cfg.compact ? 1 : 0;
+        int checked = WidgetPrefs.layoutVariant(cfg);
+        if (checked < 0 || checked > 2) checked = 0;
         final int[] sel = {checked};
         new AlertDialog.Builder(this)
                 .setTitle(R.string.layout_title)
@@ -422,6 +427,9 @@ public class HomeActivity extends Activity {
                 .setPositiveButton(android.R.string.ok,
                         new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface d, int w) {
+                                cfg.layout = sel[0];
+                                // Legacy boolean, still written so a
+                                // downgrade to a 1.5.x app renders sensibly.
                                 cfg.compact = sel[0] == 1;
                                 WidgetPrefs.save(HomeActivity.this, wid, cfg);
                                 RefreshLogic.kick(HomeActivity.this);
@@ -641,6 +649,27 @@ public class HomeActivity extends Activity {
             } else {
                 subtitle.setVisibility(View.VISIBLE);
                 subtitle.setText(r.subtitle);
+            }
+            // v1.6.0: tint the badge pill with the line's official color
+            // (dark text on light colors such as yellow) — same rule the
+            // widget badges use (BadgeRender.luminance).
+            try {
+                android.graphics.drawable.Drawable bg = badge.getBackground();
+                if (bg != null) {
+                    bg.mutate();
+                    int color = 0xFFE2001A;
+                    if (r.colorHex != null && r.colorHex.length() >= 6) {
+                        try {
+                            color = 0xFF000000
+                                    | (int) Long.parseLong(r.colorHex.replace("#", ""), 16);
+                        } catch (NumberFormatException ignored) { }
+                    }
+                    bg.setTint(color);
+                    badge.setTextColor(
+                            BadgeRender.luminance(color) > 0.6f ? 0xFF1B1D22 : 0xFFFFFFFF);
+                }
+            } catch (Throwable ignored) {
+                // exotic ROM / null background: keep the default red pill
             }
             return v;
         }

@@ -6,12 +6,15 @@ public class Intent {
     public static final String ACTION_MY_PACKAGE_REPLACED = "android.intent.action.MY_PACKAGE_REPLACED";
     public static final int FLAG_ACTIVITY_NEW_TASK = 0x10000000;
     public static final int FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS = 0x00800000;
+    /** Used by the v1.6.1 install-fallback ACTION_VIEW intent (ApkProvider). */
+    public static final int FLAG_GRANT_READ_URI_PERMISSION = 0x00000001;
 
     public String action;
     public Class<?> cls;
     public String className;
     public int flags;
     public Object data;
+    public String type;
     public final java.util.HashMap<String, Object> extras = new java.util.HashMap<String, Object>();
 
     public Intent() {}
@@ -29,6 +32,11 @@ public class Intent {
     public String getAction() { return action; }
 
     public Intent setData(android.net.Uri uri) { this.data = uri; return this; }
+
+    /** v1.6.1: the install-fallback intent (data + MIME type). */
+    public Intent setDataAndType(android.net.Uri uri, String type) {
+        this.data = uri; this.type = type; return this;
+    }
 
     public Intent putExtra(String k, int v) { extras.put(k, Integer.valueOf(v)); return this; }
 

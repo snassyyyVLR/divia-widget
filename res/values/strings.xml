@@ -157,6 +157,9 @@
     <string name="update_downloading">Téléchargement de la mise à jour…</string>
     <string name="update_confirm">Confirmez l\'installation à l\'écran.</string>
     <string name="update_dl_fail_fmt">Téléchargement impossible : %s</string>
+    <!-- v1.6.1: pre-flight refusals before the APK ever reaches the installer. -->
+    <string name="update_preflight_fmt">Installation refusée : la version téléchargée (%1$s, code %2$d) n\'est pas plus récente que la version installée (%3$s, code %4$d).</string>
+    <string name="update_preflight_pkg_fmt">Installation refusée : l\'APK téléchargé est pour le paquet %s.</string>
     <string name="update_check_fail_fmt">Vérification impossible : %s</string>
     <string name="update_repo_missing">Aucune release trouvée sur GitHub — dépôt %s : vérifiez REPO dans core/ReleaseCheck.java.</string>
     <string name="update_no_apk">Aucun APK n\'est attaché à cette version — la page GitHub s\'ouvre.</string>
@@ -168,6 +171,9 @@
     <string name="notif_update_installed">Mise à jour installée</string>
     <string name="notif_update_installed_body_fmt">Divia Widget est à jour (%s)</string>
     <string name="notif_update_failed">Échec de la mise à jour</string>
+    <!-- v1.6.1: ROM-blocked session fallback. -->
+    <string name="notif_update_tap_title">Mise à jour prête à installer</string>
+    <string name="notif_update_tap_body">L\'installation directe a été bloquée par le système — touchez pour ouvrir l\'installeur.</string>
 
     <!-- v1.3.0 : alertes récurrentes -->
     <string name="recur_menu">Alerte récurrente…</string>
@@ -198,6 +204,7 @@
     <string name="layout_title">Disposition du widget</string>
     <string name="layout_detailed">Détaillée — destination et horaire</string>
     <string name="layout_compact">Compacte — ligne et minutes</string>
+    <string name="layout_modern">Moderne — cartes arrondies et badges</string>
     <string name="catexp_banner_fmt">Horaires valables jusqu\'au %s — pensez à mettre l\'app à jour</string>
     <string name="catexp_notif_title">Horaires bientôt périmés</string>
     <string name="catexp_notif_body_fmt">Les horaires intégrés couvrent le réseau jusqu\'au %s. Mettez à jour Divia Widget pour récupérer un catalogue à jour (vérification : Réglages → Vérifier les mises à jour).</string>

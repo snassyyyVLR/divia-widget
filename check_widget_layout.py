@@ -59,10 +59,13 @@ def main():
         # Fall back to the known name so the guard still runs.
         widget_layouts.append(os.path.join(res_dir, "layout", "widget_divia.xml"))
     # v1.5.0: the compact layout variant, pushed by RefreshLogic when a
-    # widget's config has compact=true.
-    compact = os.path.join(res_dir, "layout", "widget_divia_compact.xml")
-    if compact not in widget_layouts:
-        widget_layouts.append(compact)
+    # widget's config has compact=true. v1.6.0 adds the modern variant
+    # (layout=2). Both are pushed by RefreshLogic, so they are inflated in
+    # the launcher's process too and must pass the whitelist.
+    for extra in ("widget_divia_compact.xml", "widget_divia_modern.xml"):
+        path = os.path.join(res_dir, "layout", extra)
+        if path not in widget_layouts:
+            widget_layouts.append(path)
 
     failed = False
     for path in widget_layouts:

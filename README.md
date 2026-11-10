@@ -13,9 +13,11 @@ the only permissions are the network, notifications and (for the self-
 updater) installing packages: the whole app is a few dozen KB of dependency-
 free Java, a purpose-built GTFS-RT protobuf parser and a small JSON scanner.
 
-Current release: **release-1.5.2** — version numbering follows the public
+Current release: **release-1.6.2** — version numbering follows the public
 GitHub release line (previous public drop: release-1.4.0, the private-key
-migration). `versionCode` stays monotonic (now 17); releases since 1.4.0
+migration). `versionCode` stays monotonic (now 20; 18 was the 1.6.0 test
+drop, 19 the broken 1.6.1 — it shipped the updater fix but regressed the
+1.6.0 UI; 1.6.2 is the two properly merged); releases since 1.4.0
 are signed with the private release key and install in place.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
@@ -48,7 +50,8 @@ are signed with the private release key and install in place.
 - **Battery-aware refresh (1.1.0)** — 5-minute cadence by day, 30 minutes
   during the night service gap, self-rescheduling alarms.
 - **In-app updater (1.2.0; status constants fixed in 1.4.0, install
-  confirmation fixed in 1.5.2)** — checks this repo's GitHub
+  confirmation fixed in 1.5.2, ROM-blocked sessions fixed in 1.6.1)** —
+  checks this repo's GitHub
   Releases (`snassyyyVLR/divia-widget`) every time the app opens (at most
   once per 3h; plus a manual button in Settings); a home-screen banner
   offers the new version, one tap downloads the APK and hands it to
@@ -56,9 +59,24 @@ are signed with the private release key and install in place.
   in `src/com/zai/divia/core/ReleaseCheck.java`.
   Until 1.5.2 the installer's confirmation popup never appeared (the
   status callback was an immutable PendingIntent, so Android dropped it
-  and every self-update "failed" silently); coming from 1.4.0–1.5.1 you
-  therefore install this version manually once — every later update
-  flows in place.
+  and every self-update "failed" silently). Since 1.6.1 there is also a
+  fallback for ROMs that kill such sessions outright: some builds —
+  Xiaomi HyperOS/MIUI with "MIUI optimization" on — abort a third-party
+  app's PackageInstaller session BEFORE the confirmation screen, so the
+  updater detects exactly that (a failure while no screen was ever
+  shown) and re-launches the install through the system's classic
+  installer UI: ACTION_VIEW on a content:// URI served by the built-in
+  zero-dependency ApkProvider, with a tap-to-install notification as
+  the durable handle. Coming from 1.5.2 on such a ROM you install
+  1.6.2 manually once — every later update flows in place.
+- **Three widget dispositions (1.5.0/1.6.0)** — every widget picks its own
+  layout: *Détaillée* (destination + clock), *Compacte* (line badge +
+  minutes, denser rows, right-aligned countdown) or the new *Moderne*
+  (soft rounded row cards, badge pills, big minutes). Colors stay
+  automatic (launcher day/night) in all three.
+- **Polished app screens (1.6.0)** — tinted banners, segmented mode
+  control in the picker, per-line colored badge pills on the home list,
+  hero empty state, light/dark status bar.
 - **"Dernier départ" tag (1.5.0)** — the row of a line's last departure of
   the day carries a `dernier` marker (computed from the bundled timetable,
   so it survives even when the live feed's horizon is short). No more
@@ -162,7 +180,12 @@ The build is intentionally paranoid about two widget-specific traps:
   disappears. Each release's pin set is verified resource-by-resource
   against the previously published APK (`aapt2 dump resources` on both), so
   widgets survive the update untouched — including the five-row ids in
-  1.2.0, the updater ids in 1.3.0 and the compact-layout ids in 1.5.0.
+  1.2.0, the updater ids in 1.3.0, the compact-layout ids in 1.5.0, the
+  modern-layout ids in 1.6.0 and the updater-fallback strings in 1.6.2
+  (pinned at 0x7f0600b0-b3 — NOT at the 0x7f0600af-b2 the broken 1.6.1
+  assigned them, which collided with `layout_modern` = 0x7f0600af; string
+  ids never ride in launcher-cached RemoteViews, so the renumbering is
+  invisible to widgets).
   The compact layout reuses every detailed-layout view id (only
   `cbadge0..4` are new), so cached RemoteViews keep resolving in both
   dispositions.
@@ -201,9 +224,9 @@ exactly that. Consequences:
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.5.2, API 21-34)
+AndroidManifest.xml     app manifest (version 1.6.2, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
-run-tests.sh            JVM test harness runner (1051 assertions)
+run-tests.sh            JVM test harness runner (1080 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
 debug.keystore          shared debug signing key

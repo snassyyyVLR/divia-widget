@@ -33,10 +33,18 @@ final class BadgeRender {
 
     /**
      * v1.5.0: the smaller per-row pill of the COMPACT widget layout —
-     * same rendering, 16dp tall so it fits the denser 20dp rows.
+     * same rendering, 16dp tall so it fits the denser rows.
      */
     static Bitmap makeCompact(Context c, String text, String colorHex) {
         return make(c, text, colorHex, 16f, 10f, 30f, 5f, 10f);
+    }
+
+    /**
+     * v1.6.0: the per-row pill of the MODERN widget layout — slightly
+     * larger than compact's (the modern rows are soft 32dp cards).
+     */
+    static Bitmap makeModern(Context c, String text, String colorHex) {
+        return make(c, text, colorHex, 18f, 11f, 34f, 9f, 11f);
     }
 
     /** Shared pill renderer (sizes in dp, scaled by density). */

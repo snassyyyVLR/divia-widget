@@ -2,7 +2,12 @@
 <!--
   Divia widget, v1.5.0 COMPACT layout variant ("line badge + minutes only,
   denser rows"), pushed instead of widget_divia.xml when the widget's
-  config has compact=true.
+  config has layout=1 (WidgetPrefs.LAYOUT_COMPACT).
+
+  v1.6.0 polish: minutes are RIGHT-aligned (they left-aligned into a dead
+  space before), rows breathe at 22dp, and the "dernier" tag is a small
+  amber chip instead of an italic gray afterthought. Purpose: the at-a-
+  glance board — the most departures in the least height (4x1 strips).
 
   HARD CONSTRAINT — @RemoteView whitelist: identical to widget_divia.xml,
   the launcher inflates this file in ITS OWN process through
@@ -15,7 +20,7 @@
   count0..4 (the minutes), dest0..4 (in compact: the small "dernier" tag,
   GONE unless the row is the day's last departure), stop_name, line_badge,
   empty_status, updated, widget_root. Only cbadge0..4 (the per-row line
-  badges) are new ids, appended to stable-ids.txt.
+  badges) are newer ids, already pinned to stable-ids.txt since 1.5.0.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -25,8 +30,8 @@
     android:background="@drawable/widget_bg"
     android:paddingLeft="10dp"
     android:paddingRight="10dp"
-    android:paddingTop="7dp"
-    android:paddingBottom="5dp">
+    android:paddingTop="8dp"
+    android:paddingBottom="6dp">
 
     <!-- Header: line badge + stop name, single line (no subtitle, no
          divider — that is the point of the compact disposition). -->
@@ -57,13 +62,14 @@
             android:text="Divia"/>
     </LinearLayout>
 
-    <!-- Departure rows: 20dp (vs 24dp in the detailed layout) — denser.
-         Each row = the line's badge bitmap (BadgeRender.makeCompact) +
-         the minutes countdown. destN carries only the "dernier" tag. -->
+    <!-- Departure rows: 22dp — dense but readable. countN is weighted and
+         end-gravity so the minutes hug the right edge (with the dernier
+         chip after them when the day's last departure shows). -->
     <LinearLayout
         android:id="@+id/row0"
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="4dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -80,6 +86,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
+            android:gravity="end"
             android:textColor="@color/countdown"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -89,17 +96,25 @@
             android:id="@+id/dest0"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
             android:visibility="gone"
-            android:textColor="@color/txt_sub"
-            android:textSize="10sp"
-            android:textStyle="italic"
+            android:background="@drawable/chip_dernier"
+            android:textColor="@color/late"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textAllCaps="true"
             android:maxLines="1"/>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/row1"
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="1dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -116,6 +131,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
+            android:gravity="end"
             android:textColor="@color/countdown"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -125,17 +141,25 @@
             android:id="@+id/dest1"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
             android:visibility="gone"
-            android:textColor="@color/txt_sub"
-            android:textSize="10sp"
-            android:textStyle="italic"
+            android:background="@drawable/chip_dernier"
+            android:textColor="@color/late"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textAllCaps="true"
             android:maxLines="1"/>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/row2"
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="1dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -152,6 +176,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
+            android:gravity="end"
             android:textColor="@color/countdown"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -161,17 +186,25 @@
             android:id="@+id/dest2"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
             android:visibility="gone"
-            android:textColor="@color/txt_sub"
-            android:textSize="10sp"
-            android:textStyle="italic"
+            android:background="@drawable/chip_dernier"
+            android:textColor="@color/late"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textAllCaps="true"
             android:maxLines="1"/>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/row3"
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="1dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -188,6 +221,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
+            android:gravity="end"
             android:textColor="@color/countdown"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -197,17 +231,25 @@
             android:id="@+id/dest3"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
             android:visibility="gone"
-            android:textColor="@color/txt_sub"
-            android:textSize="10sp"
-            android:textStyle="italic"
+            android:background="@drawable/chip_dernier"
+            android:textColor="@color/late"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textAllCaps="true"
             android:maxLines="1"/>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/row4"
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="1dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -224,6 +266,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
+            android:gravity="end"
             android:textColor="@color/countdown"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -233,10 +276,17 @@
             android:id="@+id/dest4"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
             android:visibility="gone"
-            android:textColor="@color/txt_sub"
-            android:textSize="10sp"
-            android:textStyle="italic"
+            android:background="@drawable/chip_dernier"
+            android:textColor="@color/late"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textAllCaps="true"
             android:maxLines="1"/>
     </LinearLayout>
 
@@ -260,5 +310,5 @@
         android:textSize="9sp"
         android:maxLines="1"
         android:ellipsize="end"
-        android:layout_marginTop="1dp"/>
+        android:layout_marginTop="2dp"/>
 </LinearLayout>

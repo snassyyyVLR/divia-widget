@@ -6,7 +6,7 @@
     <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
         <item name="android:colorPrimary">#E2001A</item>
         <item name="android:colorAccent">#FF5A68</item>
-        <item name="android:statusBarColor">#121317</item>
+        <item name="android:statusBarColor">@color/screen_bg</item>
         <item name="android:windowBackground">@color/screen_bg</item>
     </style>
 </resources>

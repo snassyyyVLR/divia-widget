@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 23+: light status bar, dark icons — matches the light
+         window background instead of a heavy colored bar. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#E2001A</item>
+        <item name="android:colorPrimaryDark">@color/screen_bg</item>
+        <item name="android:colorAccent">#E2001A</item>
+        <item name="android:statusBarColor">@color/screen_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/screen_bg</item>
+    </style>
+</resources>

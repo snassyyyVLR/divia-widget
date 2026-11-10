@@ -32,9 +32,20 @@ public final class WidgetPrefs {
         public int rows = 0;
         /** Last height the launcher reported for this widget, in dp. */
         public int heightDp = 0;
-        /** v1.5.0 layout variant: false = detailed (destination + clock),
-         *  true = compact (line badge + minutes only, denser rows). */
+        /** v1.6.0 disposition: 0 = detailed, 1 = compact, 2 = modern.
+         *  −1 = stored before 1.6.0 (only the compact boolean existed) —
+         *  layoutVariant() derives it on the fly. */
+        public int layout = -1;
+        /** v1.5.0 flag, still written for downgrade safety: an older app
+         *  version reading only this boolean keeps rendering sensibly. */
         public boolean compact = false;
+    }
+
+    /** Effective disposition of a config: the 1.6.0 layout int, or the
+     *  legacy compact boolean when absent (0 detailed / 1 compact / 2 modern). */
+    public static int layoutVariant(WidgetPrefs.Config cfg) {
+        if (cfg.layout >= 0 && cfg.layout <= 2) return cfg.layout;
+        return cfg.compact ? 1 : 0;
     }
 
     /** A "time to leave" alert attached to one widget. */
@@ -103,6 +114,7 @@ public final class WidgetPrefs {
                 .putInt(key(widgetId, "dir2"), cfg.dir2)
                 .putInt(key(widgetId, "rows"), cfg.rows)
                 .putInt(key(widgetId, "hdp"), cfg.heightDp)
+                .putInt(key(widgetId, "layout"), cfg.layout)
                 .putBoolean(key(widgetId, "compact"), cfg.compact)
                 .apply();
     }
@@ -121,6 +133,7 @@ public final class WidgetPrefs {
         cfg.dir2 = p.getInt(key(widgetId, "dir2"), 0);
         cfg.rows = p.getInt(key(widgetId, "rows"), 0);
         cfg.heightDp = p.getInt(key(widgetId, "hdp"), 0);
+        cfg.layout = p.getInt(key(widgetId, "layout"), -1);
         cfg.compact = p.getBoolean(key(widgetId, "compact"), false);
         return cfg;
     }
@@ -137,7 +150,7 @@ public final class WidgetPrefs {
     public static void delete(Context c, int widgetId) {
         SharedPreferences.Editor e = prefs(c).edit();
         for (String k : new String[]{"mode", "route", "dir", "stop", "lastok",
-                "stop2", "dir2", "rows", "hdp", "compact", "style",
+                "stop2", "dir2", "rows", "hdp", "compact", "layout", "style",
                 "n_trip", "n_time", "n_lead", "n_line", "n_head",
                 "r_on", "r_lead", "r_target", "r_days", "r_fired",
                 "rn_trip", "rn_time", "rn_lead", "rn_line", "rn_head"}) {
@@ -370,6 +383,33 @@ public final class WidgetPrefs {
         diagPrefs(c).edit().putLong("upd_check", ts).apply();
     }
 
+    /**
+     * v1.6.1: path of the update APK currently handed to the installer —
+     * the fallback handle when a ROM kills the PackageInstaller session
+     * before its confirmation screen (UpdateReceiver / ApkProvider).
+     */
+    public static String getUpdateApkPath(Context c) {
+        return diagPrefs(c).getString("upd_apk_path", "");
+    }
+
+    public static void setUpdateApkPath(Context c, String path) {
+        diagPrefs(c).edit().putString("upd_apk_path", path == null ? "" : path).apply();
+    }
+
+    /**
+     * v1.6.1: true from the session commit until PENDING_USER_ACTION or a
+     * final status arrives. A failure while still true means no
+     * confirmation screen was ever shown — the ROM blocked the session,
+     * and UpdateReceiver falls back to the system installer.
+     */
+    public static boolean getUpdateConfirmPending(Context c) {
+        return diagPrefs(c).getBoolean("upd_confirm", false);
+    }
+
+    public static void setUpdateConfirmPending(Context c, boolean pending) {
+        diagPrefs(c).edit().putBoolean("upd_confirm", pending).apply();
+    }
+
     /** Caches a release KNOWN to be newer than the installed version. */
     public static void cacheRelease(Context c, ReleaseCheck.Release rel) {
         diagPrefs(c).edit()
@@ -407,6 +447,26 @@ public final class WidgetPrefs {
                 .remove("upd_apk").remove("upd_apkname").remove("upd_size")
                 .remove("upd_notes").remove("upd_ver")
                 .apply();
+    }
+
+    /**
+     * v1.6.1: true when a release is cached AND still sorts above the
+     * installed version. BootReceiver uses this on MY_PACKAGE_REPLACED to
+     * drop the cache after any successful update, whatever installed it
+     * (the system-installer fallback reports no callback of its own).
+     */
+    public static boolean cachedReleaseIsNewer(Context c) {
+        ReleaseCheck.Release rel = getCachedRelease(c);
+        if (rel == null) return false;
+        String cur = "";
+        try {
+            android.content.pm.PackageInfo pi =
+                    c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            cur = pi.versionName != null ? pi.versionName : "";
+        } catch (Throwable t) {
+            return false;   // cannot tell — keep the cache, next check clears it
+        }
+        return rel.isNewerThan(cur);
     }
 
     private static String key(int id, String k) {

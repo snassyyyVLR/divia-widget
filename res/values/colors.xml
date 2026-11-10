@@ -13,4 +13,11 @@
     <color name="screen_bg">#F4F5F7</color>
     <color name="card_bg">#FFFFFF</color>
     <color name="btn_stroke">#E3E6EB</color>
+    <!-- v1.6.0 polish -->
+    <color name="widget_stroke">#14000000</color>
+    <color name="row_bg">#F4F5F8</color>
+    <color name="chip_dernier_bg">#FCF3E3</color>
+    <color name="banner_update_bg">#FDECEE</color>
+    <color name="banner_warn_bg">#FCF3E3</color>
+    <color name="chip_bg">#F0F1F5</color>
 </resources>

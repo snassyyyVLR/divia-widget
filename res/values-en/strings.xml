@@ -156,6 +156,9 @@
     <string name="update_downloading">Downloading the update…</string>
     <string name="update_confirm">Confirm the install on screen.</string>
     <string name="update_dl_fail_fmt">Download failed: %s</string>
+    <!-- v1.6.1: pre-flight refusals before the APK ever reaches the installer. -->
+    <string name="update_preflight_fmt">Install refused: the downloaded version (%1$s, code %2$d) is not newer than the installed one (%3$s, code %4$d).</string>
+    <string name="update_preflight_pkg_fmt">Install refused: the downloaded APK is for package %s.</string>
     <string name="update_check_fail_fmt">Update check failed: %s</string>
     <string name="update_repo_missing">No release found on GitHub — repository %s: check REPO in core/ReleaseCheck.java.</string>
     <string name="update_no_apk">No APK is attached to this release — opening the GitHub page.</string>
@@ -167,6 +170,9 @@
     <string name="notif_update_installed">Update installed</string>
     <string name="notif_update_installed_body_fmt">Divia Widget is up to date (%s)</string>
     <string name="notif_update_failed">Update failed</string>
+    <!-- v1.6.1: ROM-blocked session fallback. -->
+    <string name="notif_update_tap_title">Update ready to install</string>
+    <string name="notif_update_tap_body">Direct install was blocked by the system — tap to open the installer.</string>
 
     <!-- v1.3.0: recurring alerts -->
     <string name="recur_menu">Recurring alert…</string>
@@ -197,6 +203,7 @@
     <string name="layout_title">Widget layout</string>
     <string name="layout_detailed">Detailed — destination and time</string>
     <string name="layout_compact">Compact — line and minutes</string>
+    <string name="layout_modern">Modern — rounded cards and badges</string>
     <string name="catexp_banner_fmt">Timetable valid until %s — consider updating the app</string>
     <string name="catexp_notif_title">Timetable expiring soon</string>
     <string name="catexp_notif_body_fmt">The built-in timetable covers the network until %s. Update Divia Widget to get a fresh catalogue (check: Settings → Check for updates).</string>

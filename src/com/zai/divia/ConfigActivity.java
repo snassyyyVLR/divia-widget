@@ -19,6 +19,7 @@ import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -71,7 +72,7 @@ public class ConfigActivity extends Activity {
     private RadioButton modeLineBtn;
     private RadioButton modeStopBtn;
     private EditText search;
-    private Button backBtn;
+    private ImageView backBtn;   // v1.6.0: circular icon button in the header
     private ListView list;
 
     private final Handler handler = new Handler();
@@ -99,7 +100,7 @@ public class ConfigActivity extends Activity {
         modeLineBtn = (RadioButton) findViewById(R.id.mode_line_btn);
         modeStopBtn = (RadioButton) findViewById(R.id.mode_stop_btn);
         search = (EditText) findViewById(R.id.search);
-        backBtn = (Button) findViewById(R.id.back_btn);
+        backBtn = (ImageView) findViewById(R.id.back_btn);
         list = (ListView) findViewById(R.id.list);
 
         list.setAdapter(adapter);

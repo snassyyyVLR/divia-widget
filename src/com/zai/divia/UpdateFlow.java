@@ -38,9 +38,12 @@ import java.io.OutputStream;
  *  - a manual "check now" from Settings,
  *  - the install: download the APK asset to the cache dir, write it into a
  *    framework PackageInstaller session and commit — Android then shows its
- *    own confirmation dialog. No FileProvider, no DownloadManager, no
- *    dependencies: the APK is ~220 KB so it is fetched to memory in one
- *    shot and streamed from there.
+ *    own confirmation dialog. No DownloadManager, no dependencies: the APK
+ *    is ~220 KB so it is fetched to memory in one shot and streamed from
+ *    there. ROMs that kill such sessions before the confirmation screen
+ *    (Xiaomi HyperOS/MIUI "optimization") are detected by UpdateReceiver,
+ *    which re-runs the install through the system installer UI via
+ *    ApkProvider (v1.6.1).
  *
  * Signature note: since 1.4.0 public releases are signed with the private
  * release key (see README "Signing"), so an in-place update installs right
@@ -264,7 +267,8 @@ public final class UpdateFlow {
         }
         new Thread(new Runnable() {
             public void run() {
-                String error = null;
+                String error = null;    // download/system error -> dl dialog
+                String refused = null;  // pre-flight refusal -> own dialog
                 File apk = null;
                 try {
                     byte[] body = DiviaApi.fetch(rel.apkUrl, 60000);
@@ -274,13 +278,33 @@ public final class UpdateFlow {
                             || body[0] != 'P' || body[1] != 'K') {
                         throw new IOException("not an APK (" + body.length + " bytes)");
                     }
+                    // The GitHub API carried the asset size — a short read
+                    // (proxy hiccup, flaky mobile data) stops here.
+                    if (rel.apkSize > 0 && body.length != rel.apkSize) {
+                        throw new IOException("short download: " + body.length
+                                + " of " + rel.apkSize + " bytes");
+                    }
                     apk = writeApk(ctx, rel.tag, body);
-                    commitInstall(ctx, apk);
+                    refused = preflight(ctx, apk);
+                    if (refused == null) {
+                        // From here on, a failure callback arriving BEFORE
+                        // any confirmation screen means the ROM killed the
+                        // session — UpdateReceiver then falls back to the
+                        // system installer (see its class comment).
+                        WidgetPrefs.setUpdateApkPath(ctx, apk.getAbsolutePath());
+                        WidgetPrefs.setUpdateConfirmPending(ctx, true);
+                        commitInstall(ctx, apk);
+                    }
                 } catch (Exception e) {
                     error = String.valueOf(e);
-                    if (apk != null) try { apk.delete(); } catch (Throwable ignored) { }
+                }
+                if ((error != null || refused != null) && apk != null) {
+                    try { apk.delete(); } catch (Throwable ignored) { }
+                    WidgetPrefs.setUpdateConfirmPending(ctx, false);
+                    WidgetPrefs.setUpdateApkPath(ctx, "");
                 }
                 final String err = error;
+                final String no = refused;
                 new Handler(ctx.getMainLooper()).post(new Runnable() {
                     public void run() {
                         try { pd.dismiss(); } catch (Throwable ignored) { }
@@ -290,6 +314,12 @@ public final class UpdateFlow {
                                     .setTitle(R.string.update_check)
                                     .setMessage(activity.getString(
                                             R.string.update_dl_fail_fmt, err))
+                                    .setPositiveButton(android.R.string.ok, null)
+                                    .show();
+                        } else if (no != null) {
+                            new AlertDialog.Builder(activity)
+                                    .setTitle(R.string.update_check)
+                                    .setMessage(no)
                                     .setPositiveButton(android.R.string.ok, null)
                                     .show();
                         } else {
@@ -369,6 +399,48 @@ public final class UpdateFlow {
         return out;
     }
 
+    /** Installed versionCode, -1 when PackageManager hiccups. */
+    static int currentVersionCode(Context c) {
+        try {
+            return c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionCode;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
+     * v1.6.1: validates the downloaded APK BEFORE handing it to the
+     * installer — the session path only gives opaque errors for these, and
+     * a mis-published GitHub asset (wrong file, same or older versionCode)
+     * would otherwise die at commit time with no usable message.
+     *
+     * @return null when the APK is a valid update of THIS app, else a
+     *         localized message for its own dialog
+     * @throws IOException when the file is not readable as a package at
+     *         all (corrupt download)
+     */
+    static String preflight(Context ctx, File apk) throws IOException {
+        PackageInfo pi;
+        try {
+            pi = ctx.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+        } catch (Throwable t) {
+            pi = null;
+        }
+        if (pi == null) {
+            throw new IOException("downloaded APK unreadable as a package (corrupt?)");
+        }
+        if (!ctx.getPackageName().equals(pi.packageName)) {
+            return ctx.getString(R.string.update_preflight_pkg_fmt, pi.packageName);
+        }
+        if (pi.versionCode <= currentVersionCode(ctx)) {
+            return ctx.getString(R.string.update_preflight_fmt,
+                    pi.versionName != null ? pi.versionName : "?",
+                    Integer.valueOf(pi.versionCode),
+                    currentVersionName(ctx), Integer.valueOf(currentVersionCode(ctx)));
+        }
+        return null;
+    }
+
     /**
      * Streams the APK into a PackageInstaller session and commits it with a
      * PendingIntent back into UpdateReceiver: first callback carries the
@@ -391,6 +463,7 @@ public final class UpdateFlow {
                     int n;
                     while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
                     os.flush();
+                    session.fsync(os);   // v1.6.1: durability before commit
                 } finally {
                     in.close();
                     os.close();

@@ -156,6 +156,47 @@ public final class Notifier {
     }
 
     /**
+     * v1.6.1: the PackageInstaller session was killed by the ROM before
+     * its confirmation screen (Xiaomi HyperOS/MIUI "optimization"); the
+     * install has been re-launched through the system installer. Tapping
+     * opens that installer directly — the durable handle in case the
+     * direct activity start was blocked too.
+     */
+    public static void postUpdateTapToInstall(Context c, Uri apkUri) {
+        try {
+            ensureChannels(c);
+            NotificationManager n = nm(c);
+            if (n == null) return;
+            PendingIntent pi = null;
+            try {
+                Intent install = new Intent(ACTION_VIEW);
+                install.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                pi = PendingIntent.getActivity(c, 600007, install,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            } catch (Throwable ignored) {
+            }
+            if (pi == null) pi = openApp(c, 600006);
+            n.notify(600005, build(c, CHAN_UPDATES,
+                    c.getString(R.string.notif_update_tap_title),
+                    c.getString(R.string.notif_update_tap_body),
+                    pi));
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "notify-update-tap: " + t);
+        }
+    }
+
+    /** v1.6.1: clears the tap-to-install notification (update done/dead). */
+    public static void cancelUpdateTapToInstall(Context c) {
+        try {
+            NotificationManager n = nm(c);
+            if (n != null) n.cancel(600005);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * v1.5.0: the bundled timetable is about to stop covering the network
      * (30 days out). One-time; the home-screen banner carries the reminder
      * afterwards. Tapping opens the app.

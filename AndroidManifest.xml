@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zai.divia"
-    android:versionCode="17"
-    android:versionName="1.5.2">
+    android:versionCode="20"
+    android:versionName="1.6.2">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
@@ -89,5 +89,16 @@
         <!-- v1.2.0: receives the PackageInstaller session status callbacks
              of the in-app updater (confirmation screen launch, result). -->
         <receiver android:name=".UpdateReceiver" android:exported="false"/>
+
+        <!-- v1.6.1: serves the downloaded update APK to the SYSTEM
+             installer over a content:// URI — the ACTION_VIEW fallback for
+             ROMs (Xiaomi HyperOS/MIUI) that kill third-party
+             PackageInstaller sessions before their confirmation screen.
+             Zero dependencies: a ~90-line ContentProvider instead of
+             pulling in FileProvider. -->
+        <provider android:name=".ApkProvider"
+            android:authorities="com.zai.divia.apk"
+            android:exported="false"
+            android:grantUriPermissions="true"/>
     </application>
 </manifest>

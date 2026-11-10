@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- List item card with a bounded ripple (API 21+). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#1FE2001A">
+    <item android:drawable="@drawable/card"/>
+</ripple>

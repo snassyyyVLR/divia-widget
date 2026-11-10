@@ -21,6 +21,19 @@ public class BootReceiver extends BroadcastReceiver {
         String action = intent != null ? intent.getAction() : null;
         if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) return;
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            // v1.6.1: an update landed (any install path, including the
+            // system-installer fallback, which reports no callback of its
+            // own) — drop the now-stale updater state.
+            try {
+                Notifier.cancelUpdateTapToInstall(context);
+                if (!WidgetPrefs.cachedReleaseIsNewer(context)) {
+                    WidgetPrefs.clearUpdateCache(context);
+                }
+                WidgetPrefs.setUpdateConfirmPending(context, false);
+            } catch (Throwable ignored) {
+            }
+        }
         AlarmScheduler.schedule(context);
         try {
             // Re-arm every pending "time to leave" alert after the reboot:
