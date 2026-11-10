@@ -13,7 +13,9 @@ import android.content.pm.PackageInstaller;
 /**
  * Update status relay (v1.2.0). UpdateFlow commits the downloaded APK to a
  * PackageInstaller session with a PendingIntent here; the system then talks
- * to us through this receiver:
+ * to us through this receiver. The callback PendingIntent is created
+ * FLAG_MUTABLE (v1.5.2) — the status arrives as an intent fill-in, which an
+ * immutable PendingIntent silently drops:
  *
  *  - STATUS_PENDING_USER_ACTION: the EXTRA_INTENT we get IS the installer's
  *    own confirmation screen — launching it is the whole point (from a
@@ -45,6 +47,11 @@ public class UpdateReceiver extends BroadcastReceiver {
                 if (confirm != null) {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     context.startActivity(confirm);
+                } else {
+                    // Unreachable with the mutable callback of 1.5.2 — kept
+                    // so a future regression leaves a trace in diagnostics.
+                    WidgetPrefs.setLastError(context,
+                            "update-confirm: pending status without EXTRA_INTENT");
                 }
             } catch (Throwable t) {
                 WidgetPrefs.setLastError(context, "update-confirm: " + t);

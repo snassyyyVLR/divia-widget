@@ -155,6 +155,25 @@ public final class Notifier {
         }
     }
 
+    /**
+     * v1.5.0: the bundled timetable is about to stop covering the network
+     * (30 days out). One-time; the home-screen banner carries the reminder
+     * afterwards. Tapping opens the app.
+     */
+    public static void postCatalogExpiry(Context c, String dateLabel) {
+        try {
+            ensureChannels(c);
+            NotificationManager n = nm(c);
+            if (n == null) return;
+            n.notify(600003, build(c, CHAN_UPDATES,
+                    c.getString(R.string.catexp_notif_title),
+                    c.getString(R.string.catexp_notif_body_fmt, dateLabel),
+                    openApp(c, 600004)));
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "notify-catexp: " + t);
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private static PendingIntent openApp(Context c, int requestCode) {

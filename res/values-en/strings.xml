@@ -190,4 +190,15 @@
     <string name="recur_saved_toast">Recurring alert saved</string>
     <string name="recur_removed_toast">Recurring alert removed</string>
     <string name="recur_need_day">Pick at least one day</string>
+
+    <!-- v1.5.0: last departure, layout variants, catalog expiry, update check on open -->
+    <string name="dernier_tag">last</string>
+    <string name="manage_layout">Widget layout…</string>
+    <string name="layout_title">Widget layout</string>
+    <string name="layout_detailed">Detailed — destination and time</string>
+    <string name="layout_compact">Compact — line and minutes</string>
+    <string name="catexp_banner_fmt">Timetable valid until %s — consider updating the app</string>
+    <string name="catexp_notif_title">Timetable expiring soon</string>
+    <string name="catexp_notif_body_fmt">The built-in timetable covers the network until %s. Update Divia Widget to get a fresh catalogue (check: Settings → Check for updates).</string>
+    <string name="catexp_diag_fmt">Catalogue: valid until %s</string>
 </resources>

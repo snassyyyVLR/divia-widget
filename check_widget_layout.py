@@ -43,7 +43,10 @@ def check_layout(path):
 def main():
     res_dir = sys.argv[1] if len(sys.argv) > 1 else "res"
     widget_layouts = []
-    # The widget layout referenced by res/xml/widget_info.xml.
+    # The widget layouts: the one referenced by res/xml/widget_info.xml
+    # (the initial/detailed layout) plus every other widget RemoteViews
+    # layout — v1.5.0 added the compact variant. All of them are inflated
+    # in the launcher's process, so ALL must pass the whitelist.
     info = os.path.join(res_dir, "xml", "widget_info.xml")
     layout_ref = None
     if os.path.isfile(info):
@@ -55,6 +58,11 @@ def main():
     else:
         # Fall back to the known name so the guard still runs.
         widget_layouts.append(os.path.join(res_dir, "layout", "widget_divia.xml"))
+    # v1.5.0: the compact layout variant, pushed by RefreshLogic when a
+    # widget's config has compact=true.
+    compact = os.path.join(res_dir, "layout", "widget_divia_compact.xml")
+    if compact not in widget_layouts:
+        widget_layouts.append(compact)
 
     failed = False
     for path in widget_layouts:

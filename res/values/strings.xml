@@ -191,4 +191,15 @@
     <string name="recur_saved_toast">Alerte récurrente enregistrée</string>
     <string name="recur_removed_toast">Alerte récurrente supprimée</string>
     <string name="recur_need_day">Choisissez au moins un jour</string>
+
+    <!-- v1.5.0 : dernier départ, disposition compacte, péremption catalogue, mise à jour à l’ouverture -->
+    <string name="dernier_tag">dernier</string>
+    <string name="manage_layout">Disposition du widget…</string>
+    <string name="layout_title">Disposition du widget</string>
+    <string name="layout_detailed">Détaillée — destination et horaire</string>
+    <string name="layout_compact">Compacte — ligne et minutes</string>
+    <string name="catexp_banner_fmt">Horaires valables jusqu\'au %s — pensez à mettre l\'app à jour</string>
+    <string name="catexp_notif_title">Horaires bientôt périmés</string>
+    <string name="catexp_notif_body_fmt">Les horaires intégrés couvrent le réseau jusqu\'au %s. Mettez à jour Divia Widget pour récupérer un catalogue à jour (vérification : Réglages → Vérifier les mises à jour).</string>
+    <string name="catexp_diag_fmt">Catalogue : valable jusqu\'au %s</string>
 </resources>

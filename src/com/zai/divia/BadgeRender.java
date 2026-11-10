@@ -28,6 +28,20 @@ final class BadgeRender {
      *                 the app's default badge color is used)
      */
     static Bitmap make(Context c, String text, String colorHex) {
+        return make(c, text, colorHex, 22f, 13f, 40f, 7f, 16f);
+    }
+
+    /**
+     * v1.5.0: the smaller per-row pill of the COMPACT widget layout —
+     * same rendering, 16dp tall so it fits the denser 20dp rows.
+     */
+    static Bitmap makeCompact(Context c, String text, String colorHex) {
+        return make(c, text, colorHex, 16f, 10f, 30f, 5f, 10f);
+    }
+
+    /** Shared pill renderer (sizes in dp, scaled by density). */
+    private static Bitmap make(Context c, String text, String colorHex,
+                               float hDp, float textSp, float minWDp, float rDp, float padDp) {
         try {
             if (text == null) text = "";
             float density = c.getResources().getDisplayMetrics().density;
@@ -35,12 +49,12 @@ final class BadgeRender {
 
             Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
             p.setTypeface(Typeface.DEFAULT_BOLD);
-            p.setTextSize(13f * density);
+            p.setTextSize(textSp * density);
             float textW = p.measureText(text);
 
-            int h = Math.round(22f * density);
-            int w = Math.max(Math.round(40f * density),
-                    Math.round(textW + 16f * density));
+            int h = Math.round(hDp * density);
+            int w = Math.max(Math.round(minWDp * density),
+                    Math.round(textW + 2f * padDp * density));
 
             Bitmap bm = Bitmap.createBitmap(Math.max(1, w), Math.max(1, h),
                     Bitmap.Config.ARGB_8888);
@@ -48,7 +62,7 @@ final class BadgeRender {
 
             int bg = backgroundColor(c, colorHex);
             p.setColor(bg);
-            float r = 7f * density;
+            float r = rDp * density;
             cv.drawRoundRect(0f, 0f, (float) w, (float) h, r, r, p);
 
             // Dark text on light line colors (e.g. yellow), white otherwise.

@@ -13,11 +13,10 @@ the only permissions are the network, notifications and (for the self-
 updater) installing packages: the whole app is a few dozen KB of dependency-
 free Java, a purpose-built GTFS-RT protobuf parser and a small JSON scanner.
 
-Current release: **release-1.4.0** — version numbering follows the public
-GitHub release line (previous public drop: release-1.3.0). `versionCode`
-stays monotonic (now 14). 1.4.0 switches to the private release signing
-key (see *Signing* below): installing it over a 1.2.x/1.3.x build requires
-a one-time uninstall; from 1.4.0 on, updates install in place again.
+Current release: **release-1.5.2** — version numbering follows the public
+GitHub release line (previous public drop: release-1.4.0, the private-key
+migration). `versionCode` stays monotonic (now 17); releases since 1.4.0
+are signed with the private release key and install in place.
 
 - **Any line or any stop** — line+direction mode, or whole-stop mode merging
   every quay of a physical stop.
@@ -48,11 +47,35 @@ a one-time uninstall; from 1.4.0 on, updates install in place again.
   information.divia.fr (strikes, demos, replaced trams), never promo.
 - **Battery-aware refresh (1.1.0)** — 5-minute cadence by day, 30 minutes
   during the night service gap, self-rescheduling alarms.
-- **In-app updater (1.2.0)** — checks this repo's GitHub Releases
-  (`snassyyyVLR/divia-widget`) once a day (plus a manual button in
-  Settings); a home-screen banner offers the new version, one tap downloads
-  the APK and hands it to Android's own installer. The repo slug lives in a
-  single constant: `REPO` in `src/com/zai/divia/core/ReleaseCheck.java`.
+- **In-app updater (1.2.0; status constants fixed in 1.4.0, install
+  confirmation fixed in 1.5.2)** — checks this repo's GitHub
+  Releases (`snassyyyVLR/divia-widget`) every time the app opens (at most
+  once per 3h; plus a manual button in Settings); a home-screen banner
+  offers the new version, one tap downloads the APK and hands it to
+  Android's own installer. The repo slug lives in a single constant: `REPO`
+  in `src/com/zai/divia/core/ReleaseCheck.java`.
+  Until 1.5.2 the installer's confirmation popup never appeared (the
+  status callback was an immutable PendingIntent, so Android dropped it
+  and every self-update "failed" silently); coming from 1.4.0–1.5.1 you
+  therefore install this version manually once — every later update
+  flows in place.
+- **"Dernier départ" tag (1.5.0)** — the row of a line's last departure of
+  the day carries a `dernier` marker (computed from the bundled timetable,
+  so it survives even when the live feed's horizon is short). No more
+  waiting at 23:40 for a tram that already went.
+- **Widget layout variants (1.5.0)** — long-press a widget card →
+  *Disposition du widget*: Détaillée (destination + clock) or Compacte
+  (line badge + minutes only, denser 20dp rows). Colors stay automatic —
+  the launcher's day/night switching applies to both dispositions (color
+  themes were tried and rejected during the 1.5.0 cycle).
+- **Adaptive icon (1.5.0)** — the ORIGINAL logo bitmap is back: the legacy
+  mipmap PNG below Android 8, and the same white glyph artwork extracted
+  from it reused as both the adaptive foreground and the Android 13+
+  monochrome layer over a full-bleed Divia red background (the vector
+  redesign was dropped).
+- **Catalog expiry warning (1.5.0)** — the bundled timetable carries its own
+  coverage end date; a home-screen banner + one-time notification appear
+  during its last 30 days, and Settings → Diagnostics always shows it.
 - **5-minute auto-refresh + tap-to-refresh**, self-healing widgets, offline
   fallback with "last good data" rows.
 - **Clean companion app** — home screen listing your widgets, and a Settings
@@ -66,6 +89,8 @@ Each row is: destination · countdown · clock time.
 
 - The clock time is the **live prediction** — if the vehicle is late, that
   time already includes the delay.
+- **`dernier`** at the end of a destination = this is the last departure of
+  that line in that direction for the day — don't count on a next one.
 - **Amber countdown + `+4′`** = running ≥ 2 min late vs the timetable
   (`+2h05` format past an hour). On-time or early vehicles show no marker.
 - **Tap a row** → set a "time to leave" alert for that departure; **tap
@@ -96,9 +121,10 @@ baseline matches the operator's plan *for that date* — the realtime feed.
 
 ## Install
 
-1. Grab `DiviaWidget-debug.apk` from the [releases](../../releases) page
-   (or build it — see below) and install it (allow "install unknown apps"
-   once).
+1. Grab the APK from the [releases](../../releases) page (`DiviaWidget-release-<version>.apk`)
+   — or build it (see below) — and install it (allow "install unknown apps"
+   once). Users on a debug-signed 1.2.x/1.3.x build must uninstall once
+   first (signing-key change at 1.4.0).
 2. Long-press an empty area of your home screen → Widgets → Divia Widget.
 3. The widget appears with *Tap to pick your line and stop* — tap it,
    choose line → direction → stop (or switch to whole-stop mode).
@@ -129,12 +155,17 @@ The build is intentionally paranoid about two widget-specific traps:
   `<View>` divider).
 - **Stable resource ids** — after an in-place update, launchers re-apply
   RemoteViews cached from the *previous* APK with the old numeric ids
-  baked in. `stable-ids.txt` pins every resource id (268 as of 1.3.0,
-  append-only), and the build fails if anything drifts. Each release's pin
-  set is verified resource-by-resource against the previously published
-  APK (`aapt2 dump resources` on both), so widgets survive the update
-  untouched — including the five-row ids in 1.2.0 and the updater ids in
-  1.3.0.
+  baked in. `stable-ids.txt` pins every resource id (268 ids of the
+  published line — strictly append-only; 1.5.0's new resources — compact
+  layout + per-row badges, layout-variant strings, expiry/update strings —
+  are appended after them), and the build fails if anything drifts or
+  disappears. Each release's pin set is verified resource-by-resource
+  against the previously published APK (`aapt2 dump resources` on both), so
+  widgets survive the update untouched — including the five-row ids in
+  1.2.0, the updater ids in 1.3.0 and the compact-layout ids in 1.5.0.
+  The compact layout reuses every detailed-layout view id (only
+  `cbadge0..4` are new), so cached RemoteViews keep resolving in both
+  dispositions.
 
 `debug.keystore` ships with the repo so every rebuild installs over the
 previous one. It is a debug key — fine for personal sideloading, never
@@ -170,9 +201,9 @@ exactly that. Consequences:
 ## Repository layout
 
 ```
-AndroidManifest.xml     app manifest (version 1.4.0, API 21-34)
+AndroidManifest.xml     app manifest (version 1.5.2, API 21-34)
 build.sh                raw build-tools build (aapt2 → ecj/javac → d8 → zipalign → apksigner)
-run-tests.sh            JVM test harness runner (1025 assertions)
+run-tests.sh            JVM test harness runner (1051 assertions)
 check_widget_layout.py  build-time RemoteViews whitelist guard
 stable-ids.txt          pinned resource ids (widget-update safety)
 debug.keystore          shared debug signing key
@@ -187,10 +218,11 @@ docs/                   preview image
 
 The core (`core/`) is pure Java with no Android imports, so the whole
 parsing/rendering pipeline runs on a desktop JVM — that is what
-`run-tests.sh` exercises (1025 assertions; the live-feed sections vary
+`run-tests.sh` exercises (1051 assertions; the live-feed sections vary
 slightly with what the network serves): layout whitelist, full
 render pipeline against the real catalog and live feed, badge colors,
-row counts, commute split, adapted-day chip, RSS parsing, notification
+row counts, commute split, adapted-day chip, last-departure ("dernier")
+tagging, widget style presets, catalog expiry math, RSS parsing, notification
 building, one-shot and recurring alert scheduling (arming, re-aiming,
 firing) and the GitHub-release parsing pipeline
 (MiniJson + version comparison + notes cleaning).
@@ -213,8 +245,10 @@ in *Data & credits*, and ships no analytics.
   `gtfs-diviamobilites`). Check the dataset page for the current data
   license terms; `assets/catalog.gz` is a derived digest of that feed and
   can be regenerated with `tools/gen_catalog.py`.
-- The bundled catalog covers the network until **2027-01-03**; after that
-  date, regenerate it and rebuild.
+- The bundled catalog covers the network until **2027-01-03**; the app
+  knows it (the catalog carries its own end date) and warns 30 days
+  ahead — regenerate it with `tools/gen_catalog.py` and rebuild after
+  that date.
 - This project is not affiliated with Divia, Keolis Dijon or
   transport.data.gouv.fr. The app contacts exactly three sources:
   `proxy.transport.data.gouv.fr` (live departures), `information.divia.fr`

@@ -61,6 +61,28 @@
         android:maxLines="2"
         android:ellipsize="end"/>
 
+    <!-- v1.5.0: catalog expiry banner — appears 30 days before the bundled
+         timetable stops covering the network; tapping runs an update check. -->
+    <TextView
+        android:id="@+id/catalog_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/card"
+        android:layout_marginLeft="12dp"
+        android:layout_marginRight="12dp"
+        android:layout_marginTop="4dp"
+        android:paddingLeft="14dp"
+        android:paddingRight="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="@color/late"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end"/>
+
     <!-- Widget cards -->
     <ListView
         android:id="@+id/list"

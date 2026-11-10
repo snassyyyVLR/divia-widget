@@ -2,7 +2,11 @@
 # Compile and run the JVM test harness for the Divia widget.
 # Uses android STUBS (not android.jar) so the code runs on a desktop JVM.
 #
-# Two stages:
+# Three stages:
+#   0. Updater source guard — the PackageInstaller status PendingIntent
+#      in UpdateFlow must be created FLAG_MUTABLE: an immutable callback
+#      drops the status fill-in (no install popup, "Failed to install"),
+#      the v1.2.0-v1.5.1 bug fixed in 1.5.2.
 #   1. LayoutWhitelist  — the widget layout must only contain
 #      @RemoteView-whitelisted classes (the v1.x "Problem loading widget
 #      on every launcher" bug was a plain <View> divider).
@@ -20,6 +24,18 @@ OUT="$PROJ/out/test"
 if [ ! -f "$PROJ/out/gen/com/zai/divia/R.java" ]; then
     echo "R.java missing - build the APK first (build.sh)"; exit 1
 fi
+
+echo "[0/3] updater source guard: install-status PendingIntent must be mutable"
+if grep -q "FLAG_IMMUTABLE" "$PROJ/src/com/zai/divia/UpdateFlow.java"; then
+    echo "FAIL: UpdateFlow creates an immutable status PendingIntent — Android"
+    echo "      drops the status fill-in, the install popup never appears"
+    exit 1
+fi
+if ! grep -q "FLAG_MUTABLE" "$PROJ/src/com/zai/divia/UpdateFlow.java"; then
+    echo "FAIL: UpdateFlow lost the FLAG_MUTABLE status PendingIntent"
+    exit 1
+fi
+echo "  OK: PackageInstaller status callback is mutable"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

@@ -32,6 +32,9 @@ public final class WidgetPrefs {
         public int rows = 0;
         /** Last height the launcher reported for this widget, in dp. */
         public int heightDp = 0;
+        /** v1.5.0 layout variant: false = detailed (destination + clock),
+         *  true = compact (line badge + minutes only, denser rows). */
+        public boolean compact = false;
     }
 
     /** A "time to leave" alert attached to one widget. */
@@ -100,6 +103,7 @@ public final class WidgetPrefs {
                 .putInt(key(widgetId, "dir2"), cfg.dir2)
                 .putInt(key(widgetId, "rows"), cfg.rows)
                 .putInt(key(widgetId, "hdp"), cfg.heightDp)
+                .putBoolean(key(widgetId, "compact"), cfg.compact)
                 .apply();
     }
 
@@ -117,6 +121,7 @@ public final class WidgetPrefs {
         cfg.dir2 = p.getInt(key(widgetId, "dir2"), 0);
         cfg.rows = p.getInt(key(widgetId, "rows"), 0);
         cfg.heightDp = p.getInt(key(widgetId, "hdp"), 0);
+        cfg.compact = p.getBoolean(key(widgetId, "compact"), false);
         return cfg;
     }
 
@@ -132,7 +137,7 @@ public final class WidgetPrefs {
     public static void delete(Context c, int widgetId) {
         SharedPreferences.Editor e = prefs(c).edit();
         for (String k : new String[]{"mode", "route", "dir", "stop", "lastok",
-                "stop2", "dir2", "rows", "hdp",
+                "stop2", "dir2", "rows", "hdp", "compact", "style",
                 "n_trip", "n_time", "n_lead", "n_line", "n_head",
                 "r_on", "r_lead", "r_target", "r_days", "r_fired",
                 "rn_trip", "rn_time", "rn_lead", "rn_line", "rn_head"}) {
@@ -343,6 +348,15 @@ public final class WidgetPrefs {
 
     public static void setNotifAsked(Context c, boolean asked) {
         diagPrefs(c).edit().putBoolean("notif_asked", asked).apply();
+    }
+
+    /** v1.5.0: whether the catalog-expiry notification already rang once. */
+    public static boolean getCatexpNotified(Context c) {
+        return diagPrefs(c).getBoolean("catexp_notified", false);
+    }
+
+    public static void setCatexpNotified(Context c, boolean done) {
+        diagPrefs(c).edit().putBoolean("catexp_notified", done).apply();
     }
 
     // ------------------------------------------------------ update checker

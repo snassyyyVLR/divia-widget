@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.5.0: adaptive launcher icon (API 26+) — the ORIGINAL logo artwork:
+     full-bleed Divia red background, with the white glyph extracted from
+     the legacy launcher bitmap (mipmap-xxxhdpi/ic_launcher.png) reused as
+     BOTH the foreground and the Android 13+ monochrome layer. Devices
+     below API 26 keep the legacy mipmap PNG. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg"/>
+    <foreground android:drawable="@mipmap/ic_launcher_fg"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_fg"/>
+</adaptive-icon>

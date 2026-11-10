@@ -544,6 +544,162 @@ public final class RenderHarness {
                     "adapted: no chip on regular 2026-11-14: '" + texts.get(R.id.updated) + "'");
         }
 
+        // ---------------------------------------------------------------- v1.5.0: dernier tag / styles / catalog expiry
+        System.out.println("[v1.5.0 dernier + styles + expiry]");
+        // Catalog meta: validity date + Z lookups.
+        check(cat.validUntil != null && cat.validUntil.matches("\\d{8}"),
+                "catalog: validUntil parsed: " + cat.validUntil);
+        java.util.Calendar cal0 = java.util.Calendar.getInstance();
+        cal0.setTimeInMillis(System.currentTimeMillis());
+        String todayYmd = String.format("%04d%02d%02d",
+                cal0.get(java.util.Calendar.YEAR), cal0.get(java.util.Calendar.MONTH) + 1,
+                cal0.get(java.util.Calendar.DAY_OF_MONTH));
+        long nowMs2 = System.currentTimeMillis();
+        check(Catalog.daysLeft(todayYmd, nowMs2) == 0, "daysLeft: today → 0");
+        check(Catalog.daysLeft(todayYmd, nowMs2 - 86400000L) == 1,
+                "daysLeft: yesterday's clock → 1");
+        check(Catalog.daysLeft("", nowMs2) == Integer.MAX_VALUE, "daysLeft: empty → MAX");
+        check(Catalog.daysLeft("notadate", nowMs2) == Integer.MAX_VALUE,
+                "daysLeft: unparsable → MAX");
+
+        int lastT2Valmy = cat.lastDepartureSec(t2Id, dirT2, valmyId);
+        check(lastT2Valmy > 0, "Z: T2->Chenove at Valmy has a last departure: "
+                + lastT2Valmy + "s (" + (lastT2Valmy / 3600) + "h"
+                + ((lastT2Valmy % 3600) / 60) + ")");
+        int lastT2Any = cat.lastDepartureSecAny(t2Id, dirT2, valmyId);
+        check(lastT2Any >= lastT2Valmy, "Z: sibling-quay max ≥ direct quay");
+        check(cat.lastDepartureSec(t2Id, dirT2, "no-such-stop") == -1,
+                "Z: unknown stop → -1");
+
+        // The last-slot matcher: pure, pinned with fixed numbers.
+        check(RefreshLogic.lastStaticMatch(20 * 3600 + 10 * 60, 20 * 3600 + 10 * 60),
+                "lastStaticMatch: exact time matches");
+        check(RefreshLogic.lastStaticMatch(20 * 3600, 20 * 3600 + 11 * 60),
+                "lastStaticMatch: +11 min still in window");
+        check(!RefreshLogic.lastStaticMatch(20 * 3600, 20 * 3600 + 13 * 60),
+                "lastStaticMatch: +13 min out of window");
+        check(!RefreshLogic.lastStaticMatch(20 * 3600, -1),
+                "lastStaticMatch: unknown static → false");
+        check(RefreshLogic.lastStaticMatch(30 * 60, 24 * 3600 + 30 * 60),
+                "lastStaticMatch: 00:30 departure matches static 24:30");
+        check(!RefreshLogic.lastStaticMatch(23 * 3600 + 50 * 60, 24 * 3600 + 30 * 60),
+                "lastStaticMatch: 23:50 not tagged when 00:30 still runs");
+
+        // Render-level: the "dernier" tag and the layout variants
+        // (v1.5.0: compact disposition replaces the rejected color themes —
+        //  colors always come from the XML day/night defaults now).
+        if (lastT2Valmy > 0) {
+            java.util.Calendar day0 = java.util.Calendar.getInstance();
+            day0.clear();
+            day0.set(cal0.get(java.util.Calendar.YEAR), cal0.get(java.util.Calendar.MONTH),
+                    cal0.get(java.util.Calendar.DAY_OF_MONTH));
+            long midnight = day0.getTimeInMillis() / 1000L;
+            long noonMs = midnight * 1000L + 43200000L;
+            Departure dLast = new Departure(t2Id, "T2", "Chenove", dirT2,
+                    midnight + lastT2Valmy, 0);
+            Departure dPrev = new Departure(t2Id, "T2", "Chenove", dirT2,
+                    midnight + lastT2Valmy - 3 * 3600L, 0);
+
+            WidgetPrefs.Config cfgLast = new WidgetPrefs.Config();
+            cfgLast.lineMode = true;
+            cfgLast.routeId = t2Id;
+            cfgLast.dir = dirT2;
+            cfgLast.stopId = valmyId;
+            cfgLast.lastOk = now;
+
+            awm.clearUpdates();
+            List<Departure> only = new ArrayList<Departure>();
+            only.add(dLast);
+            RefreshLogic.render(ctx, awm, 40, cfgLast, cat, only, noonMs, false);
+            if (awm.updates.size() == 1) {
+                RemoteViews rv40 = (RemoteViews) awm.updates.get(0)[1];
+                Map<Integer, Object> texts40 = textsByView(rv40);
+                check(String.valueOf(texts40.get(R.id.dest0)).endsWith("dernier"),
+                        "dernier: static last slot tagged: '" + texts40.get(R.id.dest0) + "'");
+                check(rv40.layoutId == R.layout.widget_divia,
+                        "layout: default (detailed) disposition uses widget_divia.xml");
+                boolean anyInt = false;
+                for (RemoteViews.Act a : rv40.acts) if (a.op.startsWith("int:")) anyInt = true;
+                check(!anyInt, "layout: no reflection acts — colors stay XML/day-night defaults");
+            }
+
+            awm.clearUpdates();
+            List<Departure> early = new ArrayList<Departure>();
+            early.add(dPrev);
+            RefreshLogic.render(ctx, awm, 41, cfgLast, cat, early, noonMs, false);
+            if (awm.updates.size() == 1) {
+                Map<Integer, Object> texts41 = textsByView((RemoteViews) awm.updates.get(0)[1]);
+                check(!String.valueOf(texts41.get(R.id.dest0)).contains("dernier"),
+                        "dernier: 3h-before-last departure not tagged");
+            }
+
+            awm.clearUpdates();
+            List<Departure> two = new ArrayList<Departure>();
+            two.add(dPrev);
+            two.add(dLast);
+            RefreshLogic.render(ctx, awm, 42, cfgLast, cat, two, noonMs, false);
+            if (awm.updates.size() == 1) {
+                Map<Integer, Object> texts42 = textsByView((RemoteViews) awm.updates.get(0)[1]);
+                check(!String.valueOf(texts42.get(R.id.dest0)).contains("dernier"),
+                        "dernier: a later known departure suppresses the tag on row 0");
+                check(String.valueOf(texts42.get(R.id.dest1)).endsWith("dernier"),
+                        "dernier: tag lands on the true last row");
+            }
+
+            awm.clearUpdates();
+            WidgetPrefs.Config cfgCompact = new WidgetPrefs.Config();
+            cfgCompact.lineMode = true;
+            cfgCompact.routeId = t2Id;
+            cfgCompact.dir = dirT2;
+            cfgCompact.stopId = valmyId;
+            cfgCompact.lastOk = now;
+            cfgCompact.compact = true;
+            RefreshLogic.render(ctx, awm, 43, cfgCompact, cat, two, noonMs, false);
+            if (awm.updates.size() == 1) {
+                RemoteViews rv43 = (RemoteViews) awm.updates.get(0)[1];
+                check(rv43.layoutId == R.layout.widget_divia_compact,
+                        "layout: compact disposition uses widget_divia_compact.xml");
+                Map<Integer, android.graphics.Bitmap> badges43 = bitmapByView(rv43);
+                check(badges43.get(R.id.cbadge0) != null && badges43.get(R.id.cbadge1) != null,
+                        "layout: compact rows carry per-row line badges");
+                if (badges43.get(R.id.cbadge1) != null) {
+                    check(badges43.get(R.id.cbadge1).drawnTexts.contains("T2"),
+                            "layout: compact row badge drawn 'T2'");
+                }
+                Map<Integer, Object> texts43 = textsByView(rv43);
+                check(!texts43.containsKey(R.id.line_dest),
+                        "layout: compact pushes no line_dest (no subtitle view)");
+                check(!texts43.containsKey(R.id.clock0) && !texts43.containsKey(R.id.clock1),
+                        "layout: compact pushes no clock texts (minutes only)");
+                String mins0 = String.valueOf(texts43.get(R.id.count0));
+                check(mins0.contains("min") || mins0.contains("h"),
+                        "layout: compact row 0 shows the minutes countdown: '" + mins0 + "'");
+                // The "dernier" tag rides the small dest view in compact.
+                check("dernier".equals(String.valueOf(texts43.get(R.id.dest1))),
+                        "layout: compact dernier tag on row 1: '" + texts43.get(R.id.dest1) + "'");
+                Map<Integer, Integer> vis43 = visByView(rv43);
+                check(vis43.containsKey(R.id.dest1)
+                        && vis43.get(R.id.dest1).intValue() == android.view.View.VISIBLE,
+                        "layout: compact dernier tag visible");
+                Map<Integer, Integer> colors43 = colorsByView(rv43);
+                check(colors43.containsKey(R.id.count0) && colors43.containsKey(R.id.count1),
+                        "layout: compact minutes keep the countdown/late coloring");
+            }
+        }
+
+        // v1.5.0: catalog expiry notification.
+        ctx.notificationManager.posted.clear();
+        Notifier.postCatalogExpiry(ctx, "3 janv. 2027");
+        check(ctx.notificationManager.posted.size() == 1,
+                "notifier: catalog expiry posted");
+        if (!ctx.notificationManager.posted.isEmpty()) {
+            android.app.Notification cn =
+                    (android.app.Notification) ctx.notificationManager.posted.get(0)[1];
+            check(cn.title != null && !cn.title.isEmpty(), "notifier: expiry title set");
+            check(String.valueOf(cn.text).contains("2027"),
+                    "notifier: expiry text carries the date: '" + cn.text + "'");
+        }
+
         // ---------------------------------------------------------------- v1.1.0: traffic RSS
         System.out.println("[traffic rss]");
         String rss = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Divia</title>"

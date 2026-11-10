@@ -9,6 +9,10 @@ package android.app;
 public class PendingIntent {
     public static final int FLAG_UPDATE_CURRENT = 134217728;
     public static final int FLAG_IMMUTABLE = 67108864;
+    /** API 31+. PackageInstaller status callbacks MUST set it: the status
+     *  arrives as an intent fill-in, which FLAG_IMMUTABLE silently drops
+     *  (the v1.2.0–1.5.1 "no install popup" updater bug). */
+    public static final int FLAG_MUTABLE = 33554432;
 
     public final String kind;        // "broadcast" | "activity"
     public final int requestCode;

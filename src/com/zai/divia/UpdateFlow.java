@@ -42,13 +42,18 @@ import java.io.OutputStream;
  *    dependencies: the APK is ~220 KB so it is fetched to memory in one
  *    shot and streamed from there.
  *
- * Signature note: the repo ships one shared debug key, so a release built
- * by build.sh installs right over the previous one.
+ * Signature note: since 1.4.0 public releases are signed with the private
+ * release key (see README "Signing"), so an in-place update installs right
+ * over the previous release-key build.
  */
 public final class UpdateFlow {
 
     /** Quiet check cadence (manual checks are not throttled). */
     private static final long QUIET_INTERVAL_MS = 24L * 60 * 60 * 1000;
+
+    /** v1.5.0: app-open check cadence — one per 3h at most, so a day of
+     *  reopening stays polite to the GitHub API while updates land fast. */
+    static final long OPEN_INTERVAL_MS = 3L * 60 * 60 * 1000;
 
     private UpdateFlow() {}
 
@@ -100,6 +105,36 @@ public final class UpdateFlow {
     }
 
     // ------------------------------------------------------------ manual check
+
+    /**
+     * v1.5.0: check on app open (HomeActivity). Throttled to one per
+     * OPEN_INTERVAL_MS on the same clock as the quiet/manual checks; when
+     * a newer release is found it is cached for the banner + install flow,
+     * and onUiUpdate (null → skip) is posted back on the UI thread.
+     */
+    public static void checkOnOpen(final Activity activity, final Runnable onUiUpdate) {
+        final Context ctx = activity.getApplicationContext();
+        if (System.currentTimeMillis() - WidgetPrefs.getUpdateLastCheck(ctx)
+                < OPEN_INTERVAL_MS) {
+            return;   // checked recently
+        }
+        WidgetPrefs.setUpdateLastCheck(ctx, System.currentTimeMillis());
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Release rel = ReleaseCheck.check(8000);
+                    if (isNewerThan(ctx, rel)) WidgetPrefs.cacheRelease(ctx, rel);
+                    else WidgetPrefs.clearUpdateCache(ctx);
+                } catch (Exception e) {
+                    // Offline / no release yet / rate-limited: never nag.
+                    WidgetPrefs.setLastError(ctx, "update-check: " + e);
+                }
+                if (onUiUpdate != null) {
+                    new Handler(ctx.getMainLooper()).post(onUiUpdate);
+                }
+            }
+        }, "divia-update-open").start();
+    }
 
     /** "Check for updates" button: spinner → result dialog. */
     public static void checkNow(final Activity activity) {
@@ -362,9 +397,20 @@ public final class UpdateFlow {
                 }
                 Intent status = new Intent(ctx, UpdateReceiver.class);
                 status.setAction(UpdateReceiver.ACTION_STATUS);
+                // v1.5.2: this callback MUST be mutable. PackageInstaller
+                // reports PENDING_USER_ACTION / SUCCESS / failure by FILLING
+                // IN this broadcast's extras (EXTRA_STATUS, EXTRA_STATUS_
+                // MESSAGE, and the system's own confirmation screen inside
+                // EXTRA_INTENT). An immutable PendingIntent has its fill-in
+                // dropped by the OS, so the receiver reads EXTRA_STATUS as
+                // -1, reports "Failed to install" — and the install popup
+                // is never shown. That was the "updater always fails, no
+                // dialog" bug of every release since 1.2.0. FLAG_MUTABLE is
+                // an API-31 constant inlined at compile time; the bit is
+                // inert on older devices (PendingIntents there are mutable
+                // by default) and REQUIRED on Android 12+ for targetSdk 31+.
                 int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                        | (Build.VERSION.SDK_INT >= 23
-                                ? android.app.PendingIntent.FLAG_IMMUTABLE : 0);
+                        | android.app.PendingIntent.FLAG_MUTABLE;
                 android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(
                         ctx, 100000 + sid, status, flags);
                 session.commit(pi.getIntentSender());

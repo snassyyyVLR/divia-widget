@@ -53,54 +53,99 @@ public final class LayoutWhitelist {
             "clock0", "clock1", "clock2", "clock3", "clock4",
             "empty_status", "updated"));
 
+    /** v1.5.0: ids the COMPACT layout must declare (it reuses every
+     * detailed-layout id except line_dest/clockN, and adds the per-row
+     * line badges cbadgeN). */
+    static final Set<String> NEEDED_IDS_COMPACT = new LinkedHashSet<String>(Arrays.asList(
+            "widget_root", "line_badge", "stop_name",
+            "row0", "row1", "row2", "row3", "row4",
+            "cbadge0", "cbadge1", "cbadge2", "cbadge3", "cbadge4",
+            "dest0", "dest1", "dest2", "dest3", "dest4",
+            "count0", "count1", "count2", "count3", "count4",
+            "empty_status", "updated"));
+
     public static void main(String[] args) throws Exception {
         System.out.println("[widget layout whitelist]");
 
-        Document doc = parse(PROJ + "/res/layout/widget_divia.xml");
+        Set<String> declaredDetailed = checkLayout("res/layout/widget_divia.xml",
+                "detailed", NEEDED_IDS, "row|dest|count|clock",
+                new HashSet<String>(Arrays.asList(
+                        "row0", "row1", "row2", "row3", "row4",
+                        "dest0", "dest1", "dest2", "dest3", "dest4",
+                        "count0", "count1", "count2", "count3", "count4",
+                        "clock0", "clock1", "clock2", "clock3", "clock4")));
+
+        System.out.println("[widget layout whitelist — compact variant]");
+        checkLayout("res/layout/widget_divia_compact.xml",
+                "compact", NEEDED_IDS_COMPACT, "row|dest|count|clock|cbadge",
+                new HashSet<String>(Arrays.asList(
+                        "row0", "row1", "row2", "row3", "row4",
+                        "cbadge0", "cbadge1", "cbadge2", "cbadge3", "cbadge4",
+                        "dest0", "dest1", "dest2", "dest3", "dest4",
+                        "count0", "count1", "count2", "count3", "count4")));
+        if (declaredDetailed == null) return; // parse already failed loudly
+
+        System.out.println("[widget provider info]");
+        Document info = parse(PROJ + "/res/xml/widget_info.xml");
+        if (info != null) {
+            Element prov = info.getDocumentElement();
+            String initial = prov.getAttribute("android:initialLayout");
+            check("@layout/widget_divia".equals(initial),
+                    "initialLayout is @layout/widget_divia (got: " + initial + ")");
+            String period = prov.getAttribute("android:updatePeriodMillis");
+            check(period.isEmpty() || Long.parseLong(period) >= 1800000L,
+                    "updatePeriodMillis >= 30 min when set (got: " + period + ")");
+        }
+
+        System.out.println();
+        System.out.println("LayoutWhitelist: " + pass + " passed, " + fail + " failed");
+        if (fail > 0) System.exit(1);
+    }
+
+    /**
+     * Whitelist-checks one widget RemoteViews layout: every element class
+     * must be @RemoteView-annotated, every id the render code needs must be
+     * declared, and no stray row/dest/count/clock(/cbadge) ids may exist
+     * (RemoteViews would crash the launcher on a missing view).
+     *
+     * @return the declared id set, or null when the file could not be parsed.
+     */
+    static Set<String> checkLayout(String relPath, String label, Set<String> neededIds,
+                                   String rowishPrefixes, Set<String> expectedRowish)
+            throws Exception {
+        Document doc = parse(PROJ + "/" + relPath);
+        if (doc == null) return null;
         Element root = doc.getDocumentElement();
-        check(root != null, "widget_divia.xml parses with a root element");
+        check(root != null, relPath + " parses with a root element");
+        if (root == null) return null;
 
         Set<String> declaredIds = new HashSet<String>();
         StringBuilder offenders = new StringBuilder();
         walk(root, declaredIds, offenders, new int[]{0});
         check(offenders.length() == 0,
-                "every element class is @RemoteView-whitelisted"
+                label + ": every element class is @RemoteView-whitelisted"
                 + (offenders.length() == 0 ? "" : " — OFFENDERS:" + offenders));
         System.out.println("        (" + elements(root) + " elements checked, "
                 + declaredIds.size() + " ids declared)");
 
-        for (String needed : NEEDED_IDS) {
-            check(declaredIds.contains(needed), "layout declares @+id/" + needed);
+        for (String needed : neededIds) {
+            check(declaredIds.contains(needed),
+                    label + " layout declares @+id/" + needed);
         }
 
-        // Cross-check: the ids referenced by the Java render arrays must be
-        // exactly the row/dest/count/clock ids present in the layout (v1.1.0:
-        // five rows — 3 always + 2 shown on tall widgets).
+        // Cross-check: the row-ish ids present must be exactly the expected
+        // set — a missing id crashes the launcher at RemoteViews.apply(), an
+        // extra one means the render arrays and the layout disagree.
         Set<String> rowIds = new HashSet<String>();
         for (String n : declaredIds) {
-            if (n.startsWith("row") || n.startsWith("dest")
-                    || n.startsWith("count") || n.startsWith("clock")) rowIds.add(n);
+            for (String pfx : rowishPrefixes.split("\\|")) {
+                if (n.startsWith(pfx)) { rowIds.add(n); break; }
+            }
         }
-        check(rowIds.equals(new HashSet<String>(Arrays.asList(
-                "row0", "row1", "row2", "row3", "row4",
-                "dest0", "dest1", "dest2", "dest3", "dest4",
-                "count0", "count1", "count2", "count3", "count4",
-                "clock0", "clock1", "clock2", "clock3", "clock4"))),
-                "no stray row/dest/count/clock ids (RemoteViews would crash the launcher)");
-
-        System.out.println("[widget provider info]");
-        Document info = parse(PROJ + "/res/xml/widget_info.xml");
-        Element prov = info.getDocumentElement();
-        String initial = prov.getAttribute("android:initialLayout");
-        check("@layout/widget_divia".equals(initial),
-                "initialLayout is @layout/widget_divia (got: " + initial + ")");
-        String period = prov.getAttribute("android:updatePeriodMillis");
-        check(period.isEmpty() || Long.parseLong(period) >= 1800000L,
-                "updatePeriodMillis >= 30 min when set (got: " + period + ")");
-
-        System.out.println();
-        System.out.println("LayoutWhitelist: " + pass + " passed, " + fail + " failed");
-        if (fail > 0) System.exit(1);
+        check(rowIds.equals(expectedRowish),
+                label + ": no stray " + rowishPrefixes.replace("\\|", "/")
+                + " ids (render arrays and layout agree)");
+        return declaredIds;
     }
 
     static void walk(Element e, Set<String> ids, StringBuilder offenders, int[] counter) {
@@ -151,12 +196,18 @@ public final class LayoutWhitelist {
         if (!f.isFile()) {
             System.out.println("  FAIL  missing file: " + path);
             fail++;
-            throw new IllegalStateException("missing " + path);
+            return null;
         }
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(false);
         DocumentBuilder db = dbf.newDocumentBuilder();
-        return db.parse(f);
+        try {
+            return db.parse(f);
+        } catch (Exception e) {
+            System.out.println("  FAIL  cannot parse " + path + ": " + e);
+            fail++;
+            return null;
+        }
     }
 
     static void check(boolean ok, String msg) {

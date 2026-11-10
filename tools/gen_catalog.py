@@ -10,6 +10,12 @@ Reads static GTFS (routes/stops/trips/stop_times/calendar) and emits gzipped tex
   B|route_id|direction|label                 (most frequent headsign of that dir)
   A|stop_id|short1,short2,...                (lines serving each stop, for stop-mode UI)
   X|yyyymmdd|route_id,route_id,...           (routes on an adapted plan that day)
+  M|yyyymmdd                                 (v1.5.0: last service date covered)
+  Z|route_id|direction|stop_id|sec           (v1.5.0: last departure time-of-day,
+                                             seconds past noon-12h — GTFS allows
+                                             >86400 for after-midnight trips; the
+                                             MAX over the whole calendar, i.e. the
+                                             "dernier départ" the widget tags)
 
 The X records are the disruption-day detector: the Divia GTFS defines EVERY
 service date explicitly through calendar_dates.txt (a Saturday can run a
@@ -146,6 +152,44 @@ for d in sorted(adapted):
     pretty = date_objs[d].isoformat()
     print(f"  {d} ({pretty}, {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][date_objs[d].weekday()]}): "
           f"{len(adapted[d])} routes")
+
+# ---- v1.5.0: catalog expiry (M) + last departure per stop (Z) ----
+# valid_until: the last service date that actually has trips running.
+used_svc = {t['service_id'] for t in trips}
+service_dates = sorted(d for d, svcs in svc_by_date.items() if svcs & used_svc)
+valid_until = service_dates[-1] if service_dates else max(svc_by_date)
+out.append(f"M|{valid_until}")
+print(f"valid until: {valid_until} ({len(service_dates)} dated services)")
+
+# Last departure time-of-day per (route, dir, stop): the MAX over every
+# trip of the whole calendar (any date). Using the max is deliberate: a
+# bus within the match window of the max that is the last of ITS day gets
+# the "dernier" tag; days whose service ends earlier simply never match.
+def hhmmss(sec):
+    return f"{sec // 3600:02d}:{(sec % 3600) // 60:02d}:{sec % 60:02d}"
+
+last_dep = defaultdict(int)   # (route_id, dir, stop_id) -> seconds
+with open(f'{GTFS}/stop_times.txt') as f:
+    for row in csv.DictReader(f):
+        t = trip_by_id.get(row['trip_id'])
+        if not t:
+            continue
+        dt = row['departure_time']
+        parts = dt.split(':')
+        if len(parts) != 3:
+            continue
+        try:
+            sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        except ValueError:
+            continue
+        key = (t['route_id'], t['direction_id'], row['stop_id'])
+        if sec > last_dep[key]:
+            last_dep[key] = sec
+
+for (rid, d, sid), sec in sorted(last_dep.items()):
+    out.append(f"Z|{rid}|{d}|{sid}|{sec}")
+print(f"last-departure records: {len(last_dep)} "
+      f"(latest anywhere: {hhmmss(max(last_dep.values()))})")
 
 data = ("\n".join(out) + "\n").encode('utf-8')
 with gzip.open(OUT, 'wb', compresslevel=9) as f:

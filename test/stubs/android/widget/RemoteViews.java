@@ -43,4 +43,12 @@ public class RemoteViews {
     public void setImageViewBitmap(int viewId, android.graphics.Bitmap bm) {
         acts.add(new Act("bitmap", viewId, bm));
     }
+
+    /**
+     * v1.5.0: reflection action (e.g. "setBackgroundResource"/"setBackgroundColor").
+     * Recorded as op "int:<methodName>" so the harness can assert themes.
+     */
+    public void setInt(int viewId, String methodName, int value) {
+        acts.add(new Act("int:" + methodName, viewId, Integer.valueOf(value)));
+    }
 }

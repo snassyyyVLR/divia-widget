@@ -31,6 +31,11 @@ import java.util.zip.GZIPInputStream;
  *   B|route_id|direction|direction_label
  *   A|stop_id|line_short,line_short,...
  *   X|yyyymmdd|route_id,route_id,...   (routes on an adapted/special plan that day)
+ *   M|yyyymmdd                          (v1.5.0: last service date covered by this catalog)
+ *   Z|route_id|direction|stop_id|sec    (v1.5.0: last departure time-of-day at that
+ *                                        stop, seconds since 00:00 — GTFS allows
+ *                                        >86400 for after-midnight trips; the max
+ *                                        over the whole calendar)
  */
 public final class Catalog {
 
@@ -61,6 +66,12 @@ public final class Catalog {
 
     /** yyyymmdd -> route ids running an ADAPTED plan that day (strikes, demos, holidays). */
     public final HashMap<String, String[]> adapted = new HashMap<String, String[]>(16);
+
+    /** v1.5.0: last service date this catalog covers ("" when the record is absent). */
+    public String validUntil = "";
+
+    /** v1.5.0: (routeId|dir|stopId) -> last departure seconds-of-day. */
+    private final HashMap<String, Integer> lastDep = new HashMap<String, Integer>(2100);
 
     /** stop NAME -> every id of that physical stop (several quays share a name). */
     private HashMap<String, ArrayList<String>> idsByName;
@@ -108,6 +119,19 @@ public final class Catalog {
                 case 'X': {
                     String[] p = split(line, 3);
                     adapted.put(p[1], p[2].split(","));
+                    break;
+                }
+                case 'M': {
+                    String[] p = split(line, 2);
+                    validUntil = p[1];
+                    break;
+                }
+                case 'Z': {
+                    String[] p = split(line, 5);
+                    try {
+                        lastDep.put(p[1] + "|" + p[2] + "|" + p[3], Integer.valueOf(p[4]));
+                    } catch (NumberFormatException ignored) {
+                    }
                     break;
                 }
                 default: // ignore
@@ -224,6 +248,54 @@ public final class Catalog {
     }
 
     // ------------------------------------------------------------ adapted days
+
+    /** v1.5.0: the last departure at a stop for a line+direction, in seconds
+     *  of day (GTFS convention — may exceed 86400 for after-midnight trips);
+     *  -1 when unknown (catalog without Z records / foreign stop id). */
+    public int lastDepartureSec(String routeId, int direction, String stopId) {
+        Integer v = lastDep.get(routeId + "|" + direction + "|" + stopId);
+        return v != null ? v.intValue() : -1;
+    }
+
+    /** v1.5.0: same, taking the max over every quay of the physical stop —
+     *  used in whole-stop mode where the departure's exact quay is unknown. */
+    public int lastDepartureSecAny(String routeId, int direction, String stopId) {
+        int best = lastDepartureSec(routeId, direction, stopId);
+        if (best >= 0) {
+            // A sibling quay may run later than the requested one.
+            for (String sib : siblingIds(stopId)) {
+                int v = lastDepartureSec(routeId, direction, sib);
+                if (v > best) best = v;
+            }
+        }
+        return best;
+    }
+
+    /** v1.5.0: days between today (local) and a yyyymmdd string; a large
+     *  number when the date is absent or unparsable, negative once past.
+     *  Pure Java so the JVM harness pins the math. */
+    public static int daysLeft(String ymd, long nowMs) {
+        if (ymd == null || ymd.length() != 8) return Integer.MAX_VALUE;
+        try {
+            int y = Integer.parseInt(ymd.substring(0, 4));
+            int mo = Integer.parseInt(ymd.substring(4, 6));
+            int d = Integer.parseInt(ymd.substring(6, 8));
+            java.util.Calendar target = java.util.Calendar.getInstance();
+            target.clear();
+            target.set(y, mo - 1, d);
+            java.util.Calendar today = java.util.Calendar.getInstance();
+            today.setTimeInMillis(nowMs);
+            java.util.Calendar t0 = java.util.Calendar.getInstance();
+            t0.clear();
+            t0.set(today.get(java.util.Calendar.YEAR),
+                    today.get(java.util.Calendar.MONTH),
+                    today.get(java.util.Calendar.DAY_OF_MONTH));
+            long diff = target.getTimeInMillis() - t0.getTimeInMillis();
+            return (int) Math.round(diff / 86400000.0);
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
+    }
 
     /** True when the route runs an adapted (strike/demo/holiday) plan that day. */
     public boolean isAdapted(String ymd, String routeId) {

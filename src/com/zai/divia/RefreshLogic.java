@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -66,9 +67,27 @@ public final class RefreshLogic {
     private static final int[] DEST_IDS = {R.id.dest0, R.id.dest1, R.id.dest2, R.id.dest3, R.id.dest4};
     private static final int[] COUNT_IDS = {R.id.count0, R.id.count1, R.id.count2, R.id.count3, R.id.count4};
     private static final int[] CLOCK_IDS = {R.id.clock0, R.id.clock1, R.id.clock2, R.id.clock3, R.id.clock4};
+    /** v1.5.0: per-row line badges of the COMPACT layout (new ids, appended
+     *  to stable-ids.txt — every other id of the compact layout is reused
+     *  from the detailed one so both keep the pinned numbering). */
+    private static final int[] CBADGE_IDS = {R.id.cbadge0, R.id.cbadge1, R.id.cbadge2, R.id.cbadge3, R.id.cbadge4};
 
     /** A vehicle this many seconds behind schedule is flagged as late. */
     static final int LATE_MIN_SEC = 120;
+
+    /** v1.5.0: a departure is tagged "dernier" when its time-of-day is within
+     *  this window of the catalog's static last departure (and no later live
+     *  departure is known). Wide enough to absorb a live delay at day's end,
+     *  narrow enough that the previous-but-one bus is not tagged. */
+    static final int LAST_WIN_SEC = 12 * 60;
+
+    /** v1.5.0: departures before this local hour belong to the previous
+     *  service day (after-midnight service) for the last-bus comparison. */
+    static final int NIGHT_CUTOFF_SEC = 6 * 3600;
+
+    /** v1.5.0: rows fetched per side beyond the display count, so the
+     *  "dernier" logic can tell a truncated list from a true last bus. */
+    static final int FETCH_SLACK = 2;
 
     /** Traffic RSS poll interval (shared by every refresh path). */
     static final long TRAFFIC_CHECK_MS = 30L * 60L * 1000L;
@@ -202,11 +221,11 @@ public final class RefreshLogic {
             try {
                 deps = DiviaApi.nextDepartures(feed, cat, cfg.stopId,
                         cfg.lineMode ? cfg.routeId : null,
-                        cfg.lineMode ? cfg.dir : -1, MAX_ROWS, nowSec);
+                        cfg.lineMode ? cfg.dir : -1, MAX_ROWS + FETCH_SLACK, nowSec);
                 // Commute mode: same line, opposite direction, second stop.
                 if (cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty()) {
                     List<Departure> deps2 = DiviaApi.nextDepartures(feed, cat,
-                            cfg.stopId2, cfg.routeId, cfg.dir2, MAX_ROWS, nowSec);
+                            cfg.stopId2, cfg.routeId, cfg.dir2, MAX_ROWS + FETCH_SLACK, nowSec);
                     ArrayList<Departure> merged =
                             new ArrayList<Departure>(deps.size() + deps2.size());
                     merged.addAll(deps);
@@ -283,6 +302,14 @@ public final class RefreshLogic {
 
     // ---------------------------------------------------------------- render
 
+    // v1.5.0 layout variants (NOT color themes — those were rejected):
+    // disposition 0 (detailed) = widget_divia.xml, the full layout with
+    // destination + clock per row; disposition 1 (compact) =
+    // widget_divia_compact.xml, "line badge + minutes only" on denser
+    // 20dp rows. Both layouts share every view id except the compact
+    // per-row badges (cbadge0..4), so launchers re-applying cached
+    // RemoteViews keep resolving after an in-place update either way.
+
     static void safeRenderPlaceholder(Context c, AppWidgetManager awm, int id) {
         try {
             renderPlaceholder(c, awm, id);
@@ -331,7 +358,13 @@ public final class RefreshLogic {
                        WidgetPrefs.Config cfg, Catalog cat, List<Departure> deps,
                        long nowMs, boolean offline) {
 
-        RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_divia);
+        // v1.5.0: layout variant — compact widgets get the dense "line
+        // badge + minutes" layout, detailed ones the full layout. Colors
+        // always come from the XML defaults, so the launcher's day/night
+        // resource switching stays intact in both dispositions.
+        boolean compact = cfg.compact;
+        RemoteViews rv = new RemoteViews(context.getPackageName(),
+                compact ? R.layout.widget_divia_compact : R.layout.widget_divia);
 
         String stopName = cat != null ? cat.stopName(cfg.stopId) : cfg.stopId;
         boolean commute = cfg.lineMode && cfg.stopId2 != null && !cfg.stopId2.isEmpty();
@@ -373,7 +406,7 @@ public final class RefreshLogic {
             subLine = context.getString(R.string.all_lines);
         }
         rv.setTextViewText(R.id.stop_name, stopName);
-        rv.setTextViewText(R.id.line_dest, subLine);
+        if (!compact) rv.setTextViewText(R.id.line_dest, subLine);
 
         // ---- rows (split between the two directions in commute mode).
         int rows = effRows(cfg);
@@ -405,19 +438,61 @@ public final class RefreshLogic {
             }
 
             if (d != null) {
-                String dest = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
-                rv.setTextViewText(DEST_IDS[i], dest);
-                rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
-                // Lateness: the times shown are already the live prediction,
-                // so a delay is baked into them; the "+N'" marker and the
-                // amber countdown make the deviation from the timetable
-                // visible on top of that.
                 boolean late = d.delaySec >= LATE_MIN_SEC;
-                String clockText = formatClock(context, d.timeSec * 1000L);
-                if (late) clockText = clockText + " · " + lateMarker(context, d.delaySec);
-                rv.setTextViewText(CLOCK_IDS[i], clockText);
-                rv.setTextColor(COUNT_IDS[i], context.getResources().getColor(
-                        late ? R.color.late : R.color.countdown));
+                // v1.5.0: "dernier" tag — this is the last known live
+                // departure of its side AND its time sits on the static
+                // timetable's last slot for that stop.
+                boolean laterKnown;
+                if (commute) {
+                    laterKnown = i < rowsA ? (i + 1 < b0) : (b0 + (i - rowsA) + 1 < deps.size());
+                } else {
+                    laterKnown = i + 1 < deps.size();
+                }
+                int staticLast = cat != null
+                        ? (cfg.lineMode
+                            ? cat.lastDepartureSec(cfg.routeId, i < rowsA || !commute ? cfg.dir : cfg.dir2,
+                                    i < rowsA || !commute ? cfg.stopId : cfg.stopId2)
+                            : cat.lastDepartureSecAny(d.routeId, d.direction, cfg.stopId))
+                        : -1;
+                boolean dernier = !laterKnown
+                        && lastStaticMatch(secOfDay(d.timeSec), staticLast);
+
+                if (compact) {
+                    // Compact row: per-row line badge + minutes countdown.
+                    Catalog.Route rr = cat != null ? cat.routes.get(d.routeId) : null;
+                    setRowBadge(rv, context, CBADGE_IDS[i],
+                            rr != null ? rr.shortName : d.lineShort,
+                            rr != null ? rr.colorHex : null);
+                    rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
+                    rv.setTextColor(COUNT_IDS[i], late
+                            ? context.getResources().getColor(R.color.late)
+                            : context.getResources().getColor(R.color.countdown));
+                    // destN carries ONLY the "dernier" tag in compact.
+                    if (dernier) {
+                        rv.setTextViewText(DEST_IDS[i], context.getString(R.string.dernier_tag));
+                        rv.setViewVisibility(DEST_IDS[i], android.view.View.VISIBLE);
+                    } else {
+                        rv.setViewVisibility(DEST_IDS[i], android.view.View.GONE);
+                    }
+                } else {
+                    // Detailed row: destination, minutes, clock.
+                    String dest = cfg.lineMode ? d.headsign : d.lineShort + " · " + d.headsign;
+                    if (dernier) {
+                        dest = dest + " · " + context.getString(R.string.dernier_tag);
+                    }
+                    rv.setTextViewText(DEST_IDS[i], dest);
+                    rv.setTextViewText(COUNT_IDS[i], formatCountdown(context, d.timeSec - nowSec));
+                    // Lateness: the times shown are already the live prediction,
+                    // so a delay is baked into them; the "+N'" marker and the
+                    // amber countdown make the deviation from the timetable
+                    // visible on top of that.
+                    String clockText = formatClock(context, d.timeSec * 1000L);
+                    if (late) clockText = clockText + " · " + lateMarker(context, d.delaySec);
+                    rv.setTextViewText(CLOCK_IDS[i], clockText);
+                    rv.setTextColor(COUNT_IDS[i], late
+                            ? context.getResources().getColor(R.color.late)
+                            : context.getResources().getColor(R.color.countdown));
+                }
                 rv.setViewVisibility(ROW_IDS[i], android.view.View.VISIBLE);
 
                 // Row tap -> time-to-leave alert sheet for this departure.
@@ -544,6 +619,16 @@ public final class RefreshLogic {
         }
     }
 
+    /** v1.5.0: per-row badge of the compact layout (smaller pill). */
+    private static void setRowBadge(RemoteViews rv, Context c, int viewId, String text, String colorHex) {
+        try {
+            android.graphics.Bitmap bm = BadgeRender.makeCompact(c, text, colorHex);
+            if (bm != null) rv.setImageViewBitmap(viewId, bm);
+        } catch (Throwable t) {
+            WidgetPrefs.setLastError(c, "row-badge: " + t);
+        }
+    }
+
     /** yyyymmdd of the given epoch-ms in the device's local timezone. */
     static String ymdOf(long ms) {
         try {
@@ -622,5 +707,27 @@ public final class RefreshLogic {
     static String formatClock(Context c, long ms) {
         DateFormat f = android.text.format.DateFormat.getTimeFormat(c);
         return f.format(new Date(ms));
+    }
+
+    /** v1.5.0: local seconds-of-day of an epoch-seconds timestamp. */
+    static int secOfDay(long epochSec) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(epochSec * 1000L);
+        return cal.get(Calendar.HOUR_OF_DAY) * 3600
+                + cal.get(Calendar.MINUTE) * 60
+                + cal.get(Calendar.SECOND);
+    }
+
+    /**
+     * v1.5.0: does this live departure sit on the static timetable's last
+     * slot? Departures in the small hours belong to the previous service
+     * day and are shifted past midnight, matching the GTFS convention where
+     * the last trip can be "25:30". Pure — JVM-harness tested.
+     */
+    static boolean lastStaticMatch(int depSecOfDay, int staticLastSec) {
+        if (staticLastSec < 0) return false;
+        int dep = depSecOfDay;
+        if (dep < NIGHT_CUTOFF_SEC) dep += 86400;
+        return Math.abs(dep - staticLastSec) <= LAST_WIN_SEC;
     }
 }

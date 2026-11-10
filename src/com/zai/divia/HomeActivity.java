@@ -56,6 +56,7 @@ public class HomeActivity extends Activity {
     private LinearLayout emptyCard;
     private TextView statusText;
     private TextView updateBanner;
+    private TextView catalogBanner;
     private final Handler handler = new Handler();
     private final List<Row> rows = new ArrayList<Row>();
     private final RowAdapter adapter = new RowAdapter();
@@ -76,10 +77,19 @@ public class HomeActivity extends Activity {
         emptyCard = (LinearLayout) findViewById(R.id.empty_card);
         statusText = (TextView) findViewById(R.id.status_text);
         updateBanner = (TextView) findViewById(R.id.update_banner);
+        catalogBanner = (TextView) findViewById(R.id.catalog_banner);
 
         updateBanner.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 UpdateFlow.bannerTapped(HomeActivity.this);
+            }
+        });
+
+        // v1.5.0: catalog expiry banner — tap runs an update check (a newer
+        // app release carries a fresh timetable).
+        catalogBanner.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                UpdateFlow.checkNow(HomeActivity.this);
             }
         });
 
@@ -123,9 +133,10 @@ public class HomeActivity extends Activity {
         RefreshLogic.kick(this);
         maybeAskNotifPermission();
 
-        // v1.2.0: quiet once-a-day check of the GitHub releases; when a
-        // newer version is cached, the banner appears above the list.
-        UpdateFlow.maybeCheckQuietly(this, new Runnable() {
+        // v1.5.0: update check on every app open (throttled to one per 3h —
+        // a manual check resets the same clock); when a newer version is
+        // cached, the banner appears above the list.
+        UpdateFlow.checkOnOpen(this, new Runnable() {
             public void run() { updateBannerUi(); }
         });
 
@@ -138,8 +149,12 @@ public class HomeActivity extends Activity {
                     catalog = null;
                 }
                 handler.post(new Runnable() {
-                    public void run() { rebuild(); }
+                    public void run() {
+                        rebuild();
+                        updateCatalogBannerUi();
+                    }
                 });
+                maybeNotifyCatalogExpiry();
             }
         }, "divia-catalog").start();
 
@@ -231,6 +246,47 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /** v1.5.0: catalog expiry banner — visible for the last 30 days of the
+     *  bundled timetable's coverage. */
+    private void updateCatalogBannerUi() {
+        try {
+            if (catalog == null || catalog.validUntil.length() != 8
+                    || Catalog.daysLeft(catalog.validUntil, System.currentTimeMillis()) > 30) {
+                catalogBanner.setVisibility(View.GONE);
+                return;
+            }
+            catalogBanner.setVisibility(View.VISIBLE);
+            catalogBanner.setText(getString(R.string.catexp_banner_fmt,
+                    prettyYmd(catalog.validUntil)));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** v1.5.0: one-time notification when coverage drops under 30 days. */
+    private void maybeNotifyCatalogExpiry() {
+        try {
+            if (catalog == null || catalog.validUntil.length() != 8) return;
+            if (Catalog.daysLeft(catalog.validUntil, System.currentTimeMillis()) > 30) return;
+            if (WidgetPrefs.getCatexpNotified(this)) return;
+            WidgetPrefs.setCatexpNotified(this, true);
+            Notifier.postCatalogExpiry(this, prettyYmd(catalog.validUntil));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** "20270103" → "3 janv. 2027" (device locale), raw on any parse issue. */
+    static String prettyYmd(String ymd) {
+        try {
+            java.text.SimpleDateFormat in =
+                    new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US);
+            java.text.SimpleDateFormat out =
+                    new java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault());
+            return out.format(in.parse(ymd));
+        } catch (Throwable t) {
+            return ymd;
+        }
+    }
+
     // --------------------------------------------------------------- actions
 
     /** Opens the picker for an existing widget (edit flow). */
@@ -263,6 +319,7 @@ public class HomeActivity extends Activity {
         }
         if (cfg != null) {
             labels.add(getString(R.string.manage_rows));       actions.add(A_ROWS);
+            labels.add(getString(R.string.manage_layout));    actions.add(A_LAYOUT);
             labels.add(getString(R.string.recur_menu));       actions.add(A_RECUR);
         }
         labels.add(getString(R.string.manage_forget));         actions.add(A_FORGET);
@@ -285,6 +342,8 @@ public class HomeActivity extends Activity {
                                     rebuild();
                                 } else if (action == A_ROWS) {
                                     chooseRows(wid, cfg);
+                                } else if (action == A_LAYOUT) {
+                                    chooseLayout(wid, cfg);
                                 } else if (action == A_RECUR) {
                                     showRecurDialog(wid);
                                 } else if (action == A_FORGET) {
@@ -296,7 +355,7 @@ public class HomeActivity extends Activity {
     }
 
     private static final int A_EDIT = 0, A_RETURN = 1, A_RETURN_OFF = 2,
-            A_ROWS = 3, A_RECUR = 4, A_FORGET = 5, A_CANCEL = 6;
+            A_ROWS = 3, A_RECUR = 4, A_FORGET = 5, A_CANCEL = 6, A_LAYOUT = 7;
 
     /** Opens the return-direction stop picker for an existing line widget. */
     private void pickReturnStop(int widgetId) {
@@ -331,6 +390,39 @@ public class HomeActivity extends Activity {
                         new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface d, int w) {
                                 cfg.rows = values[sel[0]];
+                                WidgetPrefs.save(HomeActivity.this, wid, cfg);
+                                RefreshLogic.kick(HomeActivity.this);
+                            }
+                        })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * v1.5.0: layout-variant chooser (replaces the rejected color themes).
+     * Détaillée = destination + clock on 24dp rows; Compacte = line badge
+     * + minutes only on denser 20dp rows. Colors stay automatic (the
+     * launcher's day/night switching) in both dispositions.
+     */
+    private void chooseLayout(final int wid, final WidgetPrefs.Config cfg) {
+        String[] labels = {
+                getString(R.string.layout_detailed),
+                getString(R.string.layout_compact),
+        };
+        int checked = cfg.compact ? 1 : 0;
+        final int[] sel = {checked};
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.layout_title)
+                .setSingleChoiceItems(labels, checked,
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int which) {
+                                sel[0] = which;
+                            }
+                        })
+                .setPositiveButton(android.R.string.ok,
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int w) {
+                                cfg.compact = sel[0] == 1;
                                 WidgetPrefs.save(HomeActivity.this, wid, cfg);
                                 RefreshLogic.kick(HomeActivity.this);
                             }

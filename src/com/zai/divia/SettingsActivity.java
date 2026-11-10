@@ -263,12 +263,17 @@ public class SettingsActivity extends Activity {
             addRowRes(diagRows, R.string.setting_last_error, getString(R.string.value_none));
         }
 
-        // Catalog
+        // Catalog (+ v1.5.0: bundled timetable validity)
         Catalog cat = catalogQuiet();
         if (cat != null) {
-            addRowRes(diagRows, R.string.setting_catalog, getString(R.string.catalog_ok_fmt,
+            String val = getString(R.string.catalog_ok_fmt,
                     Integer.valueOf(cat.routes.size()),
-                    Integer.valueOf(cat.stopNames.size())));
+                    Integer.valueOf(cat.stopNames.size()));
+            if (cat.validUntil.length() == 8) {
+                val = val + " · " + getString(R.string.catexp_diag_fmt,
+                        HomeActivity.prettyYmd(cat.validUntil));
+            }
+            addRowRes(diagRows, R.string.setting_catalog, val);
         } else {
             addRowRes(diagRows, R.string.setting_catalog, getString(R.string.loading));
         }
